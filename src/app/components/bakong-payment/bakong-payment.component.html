@@ -1,0 +1,237 @@
+<div class="page-wrapper">
+
+  <!-- ── Header ─────────────────────────────────────────────── -->
+  <header class="topbar">
+    <div class="topbar-brand">
+      <span class="brand-icon">🏦</span>
+      <span class="brand-name">Bakong Pay</span>
+      <span class="brand-sub">Stock Management</span>
+    </div>
+    @if (pageState() === 'shop') {
+    <div class="topbar-right">
+      <label class="currency-toggle">
+        <span [class.active]="currency() === 'usd'" (click)="currency.set('usd')">USD $</span>
+        <span class="sep">|</span>
+        <span [class.active]="currency() === 'khr'" (click)="currency.set('khr')">KHR ៛</span>
+      </label>
+      @if (cartCount() > 0) {
+      <button class="btn-checkout" (click)="generateQR()" [disabled]="loading()">
+        @if (loading()) { <span class="spinner"></span> }
+        🛒 Pay {{ totalDisplay() }}
+      </button>
+      }
+    </div>
+    }
+  </header>
+
+  <!-- ── Error Banner ───────────────────────────────────────── -->
+  @if (error()) {
+  <div class="error-banner">⚠️ {{ error() }}</div>
+  }
+
+  <!-- ══════════════════════════════════════════
+       PAGE: SHOP
+       ══════════════════════════════════════════ -->
+  @if (pageState() === 'shop') {
+  <div class="shop-layout">
+
+    <!-- Product Grid -->
+    <section class="products-panel">
+      <h2 class="section-title">Products</h2>
+      @if (loading() && products().length === 0) {
+      <div class="skeleton-grid">
+        @for (s of [1,2,3,4,5,6]; track s) {
+        <div class="skeleton-card"></div>
+        }
+      </div>
+      } @else if (products().length === 0 && !loading()) {
+      <div class="empty-state">
+        <div class="empty-icon">📦</div>
+        <p>No products found. Make sure the backend is running.</p>
+        <button class="btn-outline" (click)="loadProducts()">Retry</button>
+      </div>
+      } @else {
+      <div class="product-grid">
+        @for (p of products(); track p._id) {
+        <div class="product-card" [class.out-of-stock]="p.quantity_in_stock === 0">
+          <div class="product-badge">{{ p.product_code }}</div>
+          <div class="product-icon">🛍️</div>
+          <div class="product-info">
+            <h3 class="product-name">{{ p.product_name }}</h3>
+            <div class="product-price">
+              @if (currency() === 'usd') {
+              ${{ p.unit_price.toFixed(2) }}
+              } @else {
+              {{ (p.unit_price * 4100) | number:'1.0-0' }} ៛
+              }
+            </div>
+            <div class="product-stock" [class.low]="p.quantity_in_stock <= 5">
+              {{ p.quantity_in_stock }} in stock
+            </div>
+          </div>
+          @if (p.quantity_in_stock === 0) {
+          <button class="btn-add" disabled>Out of Stock</button>
+          } @else if (getCartItem(p._id)) {
+          <div class="qty-controls">
+            <button class="qty-btn" (click)="changeQty(p._id, -1)">−</button>
+            <span class="qty-value">{{ getCartItem(p._id)!.quantity }}</span>
+            <button class="qty-btn" (click)="changeQty(p._id, 1)"
+              [disabled]="getCartItem(p._id)!.quantity >= p.quantity_in_stock">+</button>
+          </div>
+          } @else {
+          <button class="btn-add" (click)="addToCart(p)">+ Add</button>
+          }
+        </div>
+        }
+      </div>
+      }
+    </section>
+
+    <!-- Cart Panel -->
+    <aside class="cart-panel">
+      <h2 class="section-title">Your Cart</h2>
+      @if (cart().length === 0) {
+      <div class="cart-empty">
+        <div class="empty-icon">🛒</div>
+        <p>Add products to get started</p>
+      </div>
+      } @else {
+      <div class="cart-items">
+        @for (item of cart(); track item.product._id) {
+        <div class="cart-row">
+          <div class="cart-row-info">
+            <span class="cart-name">{{ item.product.product_name }}</span>
+            <span class="cart-qty">× {{ item.quantity }}</span>
+          </div>
+          <div class="cart-row-right">
+            <span class="cart-price">
+              @if (currency() === 'usd') {
+              ${{ (item.product.unit_price * item.quantity).toFixed(2) }}
+              } @else {
+              {{ (item.product.unit_price * item.quantity * 4100) | number:'1.0-0' }} ៛
+              }
+            </span>
+            <button class="cart-remove" (click)="removeFromCart(item.product._id)">✕</button>
+          </div>
+        </div>
+        }
+      </div>
+      <div class="cart-total">
+        <span>Total</span>
+        <span class="total-amount">{{ totalDisplay() }}</span>
+      </div>
+      <button class="btn-pay" (click)="generateQR()" [disabled]="loading()">
+        @if (loading()) { <span class="spinner"></span> }
+        @else { 🏦 }
+        Generate Bakong QR
+      </button>
+      }
+    </aside>
+
+  </div>
+  }
+
+  <!-- ══════════════════════════════════════════
+       PAGE: QR CODE
+       ══════════════════════════════════════════ -->
+  @if (pageState() === 'qr') {
+  <div class="qr-page">
+    <div class="qr-card">
+
+      <div class="qr-header">
+        <div class="qr-logo">🏦</div>
+        <h2>Scan to Pay</h2>
+        <p class="qr-subtitle">Open the <strong>Bakong</strong> app and scan this code</p>
+      </div>
+
+      <!-- QR Image — base64 PNG via qrcode.toDataURL() -->
+      <div class="qr-image-wrapper" [class.paid]="pollStatus() === 'paid'">
+        @if (qrDataUrl()) {
+        <img [src]="qrDataUrl()" alt="Bakong QR Code" class="qr-image" />
+        } @else {
+        <div class="qr-loading">
+          <span class="spinner-lg"></span>
+          <p>Generating QR…</p>
+        </div>
+        }
+        @if (pollStatus() === 'paid') {
+        <div class="qr-overlay-paid">✓</div>
+        }
+      </div>
+
+      <!-- Amount + Merchant -->
+      <div class="qr-amount">{{ totalDisplay() }}</div>
+      <div class="qr-merchant">Ou Seavinh · kakada_ung&#64;bkrt</div>
+
+      <!-- Countdown + poll status -->
+      <div class="qr-status-row">
+        <div class="countdown" [class.urgent]="secondsLeft() < 120">
+          ⏱ {{ countdown() }}
+        </div>
+        <div class="poll-status" [class]="'poll-' + pollStatus()">
+          @if (pollStatus() === 'polling') { <span class="dot-pulse"></span> }
+          {{ pollMessage() }}
+        </div>
+      </div>
+
+      <!-- Debug info -->
+      <details class="debug-info">
+        <summary>Debug / Session Info</summary>
+        <div class="debug-body">
+          <div><strong>Session ID:</strong> <code>{{ qrData()?.sessionId }}</code></div>
+          <div><strong>MD5:</strong> <code>{{ qrData()?.md5 }}</code></div>
+          <div><strong>Expires:</strong> <code>{{ qrData()?.expiresAt }}</code></div>
+          <div><strong>Amount:</strong> <code>{{ qrData()?.total_amount }}</code></div>
+        </div>
+      </details>
+
+      <button class="btn-outline-small" (click)="startOver()">← Back to Shop</button>
+    </div>
+  </div>
+  }
+
+  <!-- ══════════════════════════════════════════
+       PAGE: SUCCESS
+       ══════════════════════════════════════════ -->
+  @if (pageState() === 'success') {
+  <div class="result-page">
+    <div class="result-card">
+      <div class="result-icon success-icon">✓</div>
+      <h2>Payment Received! 🎉</h2>
+      <p>Your sale has been recorded and stock has been updated.</p>
+      @if (saleResult()) {
+      <div class="sale-details">
+        <div class="sale-row">
+          <span>Sale ID</span>
+          <code>{{ saleResult()._id }}</code>
+        </div>
+        <div class="sale-row">
+          <span>Total</span>
+          <strong>${{ saleResult().total_amount?.toFixed(2) }}</strong>
+        </div>
+        <div class="sale-row">
+          <span>Status</span>
+          <span class="badge-paid">{{ saleResult().payment_status }}</span>
+        </div>
+      </div>
+      }
+      <button class="btn-pay" (click)="startOver()">Make Another Payment</button>
+    </div>
+  </div>
+  }
+
+  <!-- ══════════════════════════════════════════
+       PAGE: EXPIRED
+       ══════════════════════════════════════════ -->
+  @if (pageState() === 'expired') {
+  <div class="result-page">
+    <div class="result-card">
+      <div class="result-icon expired-icon">⏱</div>
+      <h2>QR Code Expired</h2>
+      <p>The 15-minute window has passed. Please generate a new QR code.</p>
+      <button class="btn-pay" (click)="startOver()">Try Again</button>
+    </div>
+  </div>
+  }
+
+</div>

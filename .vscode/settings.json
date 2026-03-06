@@ -1,0 +1,12 @@
+{
+  // Tell VS Code to use the TypeScript bundled with THIS project,
+  // not the system-wide TypeScript 5.3 that causes false red underlines.
+  "typescript.tsdk": "node_modules/typescript/lib",
+  "typescript.enablePromptUseWorkspaceTsdk": true,
+
+  // Suppress false-positive Angular decorator errors in the IDE
+  "typescript.preferences.importModuleSpecifier": "relative",
+
+  // Angular Language Service — use Ivy compiler
+  "angularLanguageService.experimental.enableIvy": true
+}
