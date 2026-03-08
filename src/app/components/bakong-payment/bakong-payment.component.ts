@@ -12,6 +12,7 @@ import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import * as QRCode from 'qrcode';
 import { BakongService, Product, GenerateQRResponse, CartItem as BagItem } from '../../services/bakong.service';
+import { ApiService } from '../../services/api.service';
 
 /**
  * REPRESENTATION OF A SINGLE ITEM IN THE LOCAL CART
@@ -32,6 +33,7 @@ type PageState = 'shop' | 'qr' | 'success' | 'expired';
 })
 export class BakongPaymentComponent implements OnInit, OnDestroy {
   private bakongService = inject(BakongService);
+  private apiService = inject(ApiService);
   private platformId = inject(PLATFORM_ID);
 
   // ── State ────────────────────────────────────────────────────
@@ -81,6 +83,14 @@ export class BakongPaymentComponent implements OnInit, OnDestroy {
     const m = Math.floor(this.secondsLeft() / 60).toString().padStart(2, '0');
     const s = (this.secondsLeft() % 60).toString().padStart(2, '0');
     return `${m}:${s}`;
+  });
+
+  finalizedTotal = computed(() => {
+    const res = this.saleResult();
+    if (!res) return '';
+    const t = res.total_amount;
+    if (this.currency() === 'usd') return `$${t.toFixed(2)}`;
+    return `${Math.round(t * 4100).toLocaleString()} ៛`;
   });
 
   readonly TEST_USER_ID = '000000000000000000000001';
@@ -189,6 +199,41 @@ export class BakongPaymentComponent implements OnInit, OnDestroy {
         this.error.set(err?.error?.message ?? 'QR generation failed. Check the console.');
         this.loading.set(false);
       },
+    });
+  }
+
+  // ── Cash Payment ─────────────────────────────────────────────
+  payByCash() {
+    if (this.cart().length === 0) return;
+    this.loading.set(true);
+    this.error.set('');
+
+    const payload = {
+      customer_id: null,
+      items: this.cart().map(item => ({
+        product_id: item.product._id,
+        product_name: item.product.product_name,
+        quantity: item.quantity,
+        sale_price: item.product.unit_price,
+        total_price: item.product.unit_price * item.quantity
+      })),
+      total_amount: this.total(),
+      payment_method: 'CASH',
+      payment_status: 'PAID',
+      sale_date: new Date().toISOString()
+    };
+
+    this.apiService.createSale(payload).subscribe({
+      next: (res: any) => {
+        this.saleResult.set(res.data);
+        this.pageState.set('success');
+        this.loading.set(false);
+        this.cart.set([]);
+      },
+      error: (err: any) => {
+        this.error.set(err?.error?.message ?? 'Cash payment failed.');
+        this.loading.set(false);
+      }
     });
   }
 

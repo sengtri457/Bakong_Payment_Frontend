@@ -18,6 +18,7 @@
   flex-direction: column;
 }
 
+
 /* --- HEADER --- */
 .luxe-pos-header {
   background: var(--pos-surface);
@@ -125,18 +126,16 @@
 }
 
 .pos-shop-grid {
-  display: grid;
-  grid-template-columns: 1fr 400px;
   width: 100%;
   height: calc(100vh - 85px);
+  margin: 0;
 }
 
 /* --- PRODUCT GALLERY --- */
 .pos-gallery {
-  padding: 2.5rem;
   background: var(--pos-bg);
   overflow-y: auto;
-  scrollbar-width: none;
+  scrollbar-width: thin;
 }
 
 .gallery-header {
@@ -340,9 +339,16 @@
 .pos-checkout-sidebar {
   background: white;
   border-left: 1px solid var(--pos-border);
-  display: flex;
-  flex-direction: column;
-  padding: 2.5rem;
+  height: 100%;
+  z-index: 10;
+}
+
+.shadow-lg-reverse {
+  box-shadow: 0 -15px 40px rgba(0, 0, 0, 0.08);
+}
+
+.fw-black {
+  font-weight: 900;
 }
 
 .checkout-header {
@@ -430,10 +436,7 @@
   color: var(--pos-text);
 }
 
-.checkout-footer {
-  border-top: 2px solid #f1f5f9;
-  padding-top: 1.5rem;
-}
+
 
 .summary-line {
   display: flex;
@@ -468,6 +471,32 @@
   transform: translateY(-2px);
   background: #e62e5c;
   box-shadow: 0 15px 40px rgba(255, 51, 102, 0.3);
+}
+
+.checkout-actions {
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+  width: 100%;
+}
+
+.pos-btn-cash {
+  width: 100%;
+  background: #f1f5f9;
+  color: var(--pos-text);
+  border: 1px solid #e2e8f0;
+  padding: 1.15rem;
+  border-radius: 16px;
+  font-size: 0.95rem;
+  font-weight: 700;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.pos-btn-cash:hover {
+  background: #e2e8f0;
+  transform: translateY(-2px);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.05);
 }
 
 /* --- QR MODAL --- */
@@ -617,4 +646,89 @@
 .luxe-scroll::-webkit-scrollbar-thumb {
   background: #e2e8f0;
   border-radius: 10px;
+}
+
+/* --- SKELETON LOADERS --- */
+.pos-skeleton-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+  gap: 1.5rem;
+}
+
+.pos-skeleton-card {
+  background: white;
+  border-radius: 20px;
+  padding: 1.25rem;
+  border: 1px solid var(--pos-border);
+  position: relative;
+  overflow: hidden;
+  height: 340px;
+  /* roughly matching real card height */
+}
+
+.pos-skeleton-card::before {
+  content: "";
+  position: absolute;
+  top: 1.25rem;
+  left: 1.25rem;
+  right: 1.25rem;
+  aspect-ratio: 1/1;
+  background: #f1f5f9;
+  border-radius: 16px;
+}
+
+.pos-skeleton-card::after {
+  content: "";
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  background: linear-gradient(90deg, transparent 0%, rgba(255, 255, 255, 0.4) 50%, transparent 100%);
+  animation: shimmer 2s infinite linear;
+}
+
+.pos-skeleton-card::before,
+.pos-skeleton-card .skeleton-text,
+.pos-skeleton-card .skeleton-title,
+.pos-skeleton-card .skeleton-meta,
+.pos-skeleton-card .skeleton-price {
+  background: #f1f5f9;
+}
+
+/* Extra text placeholders for skeleton */
+.pos-skeleton-card div[class*="skeleton-"] {
+  position: absolute;
+  border-radius: 4px;
+}
+
+.pos-skeleton-card .skeleton-title {
+  bottom: 5rem;
+  left: 1.25rem;
+  width: 70%;
+  height: 18px;
+}
+
+.pos-skeleton-card .skeleton-meta {
+  bottom: 6.8rem;
+  left: 1.25rem;
+  width: 40%;
+  height: 12px;
+}
+
+.pos-skeleton-card .skeleton-price {
+  bottom: 2.25rem;
+  left: 1.25rem;
+  width: 35%;
+  height: 24px;
+}
+
+@keyframes shimmer {
+  0% {
+    transform: translateX(-100%);
+  }
+
+  100% {
+    transform: translateX(100%);
+  }
 }

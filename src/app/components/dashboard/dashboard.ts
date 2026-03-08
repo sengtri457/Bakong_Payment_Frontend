@@ -8,7 +8,7 @@ import { RouterLink, RouterOutlet } from '@angular/router';
 @Component({
   selector: 'app-dashboard',
   standalone: true,
-  imports: [CommonModule,RouterOutlet,RouterLink],
+  imports: [CommonModule],
   template: `
     <div class="dashboard-container">
       <div class="dash-header">
@@ -92,29 +92,53 @@ import { RouterLink, RouterOutlet } from '@angular/router';
           </div>
         </div>
 
-        <!-- Top Selling Products -->
-        <div class="luxe-card top-sellers">
-          <div class="card-header">
-            <h3 class="card-t">Top Selling Products</h3>
-          </div>
-          <div class="product-list">
-            @for (p of topSellers(); track p._id) {
-              <div class="p-item">
-                <div class="p-img">
-                   <img [src]="'/api/products/image/' + p._id" onerror="this.src='https://placehold.co/100x100/fdf2f4/ff3366?text=Ritual'" alt="product" />
+        <!-- Side Insights -->
+        <div class="side-content">
+          <!-- Top Selling Products -->
+          <div class="luxe-card top-sellers">
+            <div class="card-header">
+              <h3 class="card-t">Top Sellers</h3>
+            </div>
+            <div class="product-list">
+              @for (p of topSellers(); track p._id) {
+                <div class="p-item">
+                  <div class="p-img">
+                     <img [src]="'/api/products/image/' + p._id" onerror="this.src='https://placehold.co/100x100/fdf2f4/ff3366?text=Cosmetic'" alt="product" />
+                  </div>
+                  <div class="p-info">
+                    <span class="p-name">{{ p.product_name }}</span>
+                    <span class="p-count">{{ p.total_quantity_sold }} sold</span>
+                  </div>
+                  <div class="p-price">\${{ p.unit_price?.toFixed(2) }}</div>
                 </div>
-                <div class="p-info">
-                  <span class="p-name">{{ p.product_name }}</span>
-                  <span class="p-count">{{ p.total_quantity_sold }} units sold</span>
-                </div>
-                <div class="p-price">\${{ p.unit_price?.toFixed(2) }}</div>
-              </div>
-            }
-            @if (topSellers().length === 0) {
-              <div class="empty-state">No sales yet.</div>
-            }
+              }
+              @if (topSellers().length === 0) {
+                <div class="empty-state">No sales yet.</div>
+              }
+            </div>
           </div>
-          <button class="luxe-btn-outline" routerLink="/products">View All Products</button>
+
+          <!-- Low Stock Alerts -->
+          <div class="luxe-card low-stock-alerts" *ngIf="lowStockProducts().length > 0">
+            <div class="card-header">
+              <h3 class="card-t">Stock Alerts</h3>
+              <span class="alert-badge">{{ lowStockProducts().length }}</span>
+            </div>
+            <div class="alert-list">
+              @for (p of lowStockProducts(); track p._id) {
+                <div class="alert-item">
+                  <div class="alert-icon">⚠️</div>
+                  <div class="alert-details">
+                    <div class="p-name">{{ p.product_name }}</div>
+                    <div class="p-stock">
+                      Only <span class="qty">{{ p.quantity_in_stock }}</span> remaining
+                    </div>
+                  </div>
+                  <button class="mini-reorder-btn" (click)="reorder(p)">Reorder</button>
+                </div>
+              }
+            </div>
+          </div>
         </div>
       </div>
 
@@ -122,7 +146,7 @@ import { RouterLink, RouterOutlet } from '@angular/router';
       <div class="luxe-card table-card">
         <div class="card-header">
           <h3 class="card-t">Recent Orders</h3>
-          <button class="luxe-link">Export CSV</button>
+          <button class="luxe-link" (click)="exportToCSV()">Export CSV</button>
         </div>
         <div class="luxe-table-wrapper">
           <table class="luxe-table">
@@ -346,12 +370,19 @@ import { RouterLink, RouterOutlet } from '@angular/router';
       letter-spacing: -0.04em;
     }
 
-    /* Main Grid */
+    /* Main Grid & Side Content */
     .main-grid {
       display: grid;
       grid-template-columns: 1fr 380px;
       gap: 1.5rem;
+      align-items: start;
     }
+    .side-content {
+      display: flex;
+      flex-direction: column;
+      gap: 1.5rem;
+    }
+    
     .card-header {
       display: flex;
       justify-content: space-between;
@@ -454,63 +485,76 @@ import { RouterLink, RouterOutlet } from '@angular/router';
       letter-spacing: 0.05em;
     }
 
-    /* Top Sellers */
-    .product-list {
+    /* Top Sellers & Alert Mini Styles */
+    .product-list, .alert-list {
       display: flex;
       flex-direction: column;
-      gap: 1.5rem;
-      margin-bottom: 2rem;
+      gap: 1rem;
     }
-    .p-item {
+    
+    .p-item, .alert-item {
       display: flex;
       align-items: center;
-      gap: 1.25rem;
-      padding: 0.5rem;
-      border-radius: 14px;
-      transition: background 0.2s;
+      gap: 1rem;
+      padding: 0.75rem;
+      border-radius: 12px;
+      background: #f8fafc;
+      transition: all 0.2s ease;
     }
-    .p-item:hover { background: #f8fafc; }
+    .p-item:hover { background: #f1f5f9; transform: translateX(4px); }
+    
     .p-img {
-      width: 52px;
-      height: 52px;
-      background: #f1f5f9;
-      border-radius: 14px;
+      width: 44px;
+      height: 44px;
+      background: #ffffff;
+      border-radius: 10px;
       display: flex;
       align-items: center;
       justify-content: center;
       overflow: hidden;
-      border: 1px solid #e2e8f0;
+      border: 1px solid #eef0f7;
     }
     .p-img img { width: 100%; height: 100%; object-fit: cover; }
-    .p-info {
+    
+    .p-info, .alert-details {
       flex: 1;
       display: flex;
       flex-direction: column;
-      gap: 4px;
+      gap: 2px;
     }
-    .p-name { font-size: 0.95rem; font-weight: 700; color: var(--luxe-text); }
-    .p-count { font-size: 0.8rem; color: #64748b; font-weight: 600;}
-    .p-price { font-size: 1rem; font-weight: 800; color: var(--luxe-primary); }
+    .p-name { font-size: 0.9rem; font-weight: 700; color: var(--luxe-text); }
+    .p-count { font-size: 0.75rem; color: #64748b; font-weight: 600;}
+    .p-price { font-size: 0.95rem; font-weight: 800; color: var(--luxe-primary); }
 
-    .luxe-btn-outline {
-      width: 100%;
-      background: #ffffff;
-      border: 1.5px solid #eef0f7;
-      border-radius: 14px;
-      padding: 0.9rem;
-      font-size: 0.9rem;
+    /* Low Stock Specifics */
+    .low-stock-alerts {
+      border-left: 4px solid #f43f5e;
+    }
+    .alert-badge {
+      background: #fef2f2;
+      color: #e11d48;
+      font-size: 0.75rem;
+      font-weight: 800;
+      padding: 4px 10px;
+      border-radius: 20px;
+      box-shadow: 0 4px 10px rgba(244, 63, 94, 0.1);
+    }
+    .alert-icon { font-size: 1.2rem; filter: drop-shadow(0 0 4px rgba(244, 63, 94, 0.2)); }
+    .p-stock { font-size: 0.75rem; color: #64748b; font-weight: 600; }
+    .p-stock .qty { color: #e11d48; font-weight: 800; }
+    
+    .mini-reorder-btn {
+      background: var(--luxe-primary);
+      color: white;
+      border: none;
+      padding: 0.5rem 0.85rem;
+      border-radius: 8px;
+      font-size: 0.75rem;
       font-weight: 700;
-      color: var(--luxe-text);
       cursor: pointer;
-      transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+      transition: all 0.2s;
     }
-    .luxe-btn-outline:hover { 
-      background: var(--luxe-text); 
-      color: #fff; 
-      border-color: var(--luxe-text);
-      transform: translateY(-2px);
-      box-shadow: 0 8px 20px rgba(0,0,0,0.1);
-    }
+    .mini-reorder-btn:hover { background: #000; transform: scale(1.05); }
 
     /* Table Section */
     .table-card { padding: 2rem 0; }
@@ -765,50 +809,138 @@ export class Dashboard implements OnInit {
   }
 
   reorder(product: any) {
+    const suppliers = this.suppliers();
+    if (suppliers.length === 0) {
+      Swal.fire({
+        title: 'No Suppliers Found',
+        text: 'Please add at least one supplier to the system first.',
+        icon: 'error',
+        confirmButtonColor: 'var(--luxe-primary, #ff3366)',
+        background: '#ffffff',
+        color: '#1a1d27'
+      });
+      return;
+    }
+
+    const supplierOptions = suppliers.map(s => 
+      `<option value="${s._id}" ${product.supplier_id === s._id ? 'selected' : ''}>${s.supplier_name}</option>`
+    ).join('');
+
     Swal.fire({
-      title: 'Formal Reorder (PO)',
-      text: `Create a Purchase Order for ${product.product_name}?`,
-      input: 'number',
-      inputAttributes: { min: '1', step: '1' },
-      inputValue: 50,
+      title: '<h2 style="font-weight: 900; letter-spacing: -0.04em; margin-bottom: 0;">Restock Inventory</h2>',
+      html: `
+        <div class="luxe-modal-body" style="text-align: left; padding: 20px 0;">
+          <div style="background: #f8fafc; padding: 15px; border-radius: 16px; margin-bottom: 25px; border: 1px solid #eef0f7;">
+            <span style="display: block; font-size: 0.7rem; color: #94a3b8; font-weight: 800; text-transform: uppercase; letter-spacing: 0.1em; margin-bottom: 4px;">Active Product</span>
+            <span style="font-weight: 800; color: #1a1d27; font-size: 1.15rem;">${product.product_name}</span>
+          </div>
+
+          <div style="margin-bottom: 20px;">
+            <label style="display: block; font-size: 0.75rem; color: #64748b; font-weight: 800; text-transform: uppercase; letter-spacing: 0.05em; margin-bottom: 8px;">Select Supplier</label>
+            <select id="supplier-select" style="width: 100%; border-radius: 12px; border: 2px solid #f1f3f9; padding: 0 15px; font-weight: 700; background: #fff; height: 54px; outline: none; transition: border-color 0.2s; cursor: pointer; color: #1a1d27;">
+              ${supplierOptions}
+            </select>
+          </div>
+
+          <div>
+            <label style="display: block; font-size: 0.75rem; color: #64748b; font-weight: 800; text-transform: uppercase; letter-spacing: 0.05em; margin-bottom: 8px;">Restock Quantity</label>
+            <div style="position: relative;">
+               <input id="reorder-qty" type="number" value="50" min="1" style="width: 100%; border-radius: 12px; border: 2px solid #f1f3f9; padding: 0 15px; font-weight: 800; background: #fff; height: 54px; outline: none; transition: border-color 0.2s; color: #ff3366; font-size: 1.2rem;">
+               <span style="position: absolute; right: 15px; top: 50%; transform: translateY(-50%); color: #94a3b8; font-weight: 700; font-size: 0.8rem;">UNITS</span>
+            </div>
+          </div>
+        </div>
+      `,
       showCancelButton: true,
-      confirmButtonText: 'Generate PO',
-      confirmButtonColor: 'var(--primary)',
-      background: 'var(--surface)',
-      color: 'var(--text)',
-      inputValidator: (value) => {
-        if (!value || parseInt(value) <= 0) return 'Please enter a valid quantity';
-        return null;
+      confirmButtonText: 'Create Purchase Order',
+      confirmButtonColor: '#ff3366',
+      cancelButtonText: 'Cancel',
+      background: '#ffffff',
+      color: '#1a1d27',
+      padding: '2rem',
+      width: '450px',
+      buttonsStyling: false,
+      customClass: {
+        confirmButton: 'luxe-swal-confirm',
+        cancelButton: 'luxe-swal-cancel',
+        popup: 'luxe-swal-popup'
+      },
+      didOpen: () => {
+        // Add custom styles to the document for this modal
+        const style = document.createElement('style');
+        style.innerHTML = `
+          .luxe-swal-confirm {
+            background: #ff3366 !important;
+            color: white !important;
+            padding: 14px 28px !important;
+            border-radius: 14px !important;
+            font-weight: 800 !important;
+            border: none !important;
+            margin: 0 10px !important;
+            font-size: 0.95rem !important;
+            cursor: pointer !important;
+            box-shadow: 0 10px 20px rgba(255, 51, 102, 0.2) !important;
+            transition: all 0.2s !important;
+          }
+          .luxe-swal-confirm:hover { transform: translateY(-2px); box-shadow: 0 12px 24px rgba(255, 51, 102, 0.3) !important; }
+          .luxe-swal-cancel {
+            background: #f1f5f9 !important;
+            color: #64748b !important;
+            padding: 14px 28px !important;
+            border-radius: 14px !important;
+            font-weight: 800 !important;
+            border: none !important;
+            margin: 0 10px !important;
+            font-size: 0.95rem !important;
+            cursor: pointer !important;
+          }
+          .luxe-swal-popup { border-radius: 32px !important; }
+          #supplier-select:focus, #reorder-qty:focus { border-color: #ff3366 !important; }
+        `;
+        document.head.appendChild(style);
+      },
+      preConfirm: () => {
+        const supplierId = (document.getElementById('supplier-select') as HTMLSelectElement).value;
+        const quantity = parseInt((document.getElementById('reorder-qty') as HTMLInputElement).value);
+        
+        if (!supplierId) {
+          Swal.showValidationMessage('Please select a supplier');
+          return false;
+        }
+        if (!quantity || quantity <= 0) {
+          Swal.showValidationMessage('Please enter a valid quantity');
+          return false;
+        }
+        
+        const selectedSupplier = suppliers.find(s => s._id === supplierId);
+        return { supplierId, supplierName: selectedSupplier.supplier_name, quantity };
       }
     }).then((result) => {
       if (result.isConfirmed) {
-        const orderQty = parseInt(result.value);
-        
-        // Find a valid supplier fallback
-        const defaultSupplier = this.suppliers()[0] || { _id: '000000000000000000000001', supplier_name: 'Direct Supplier' };
+        const { supplierId, supplierName, quantity } = result.value;
         
         const purchaseData = {
-          supplier_id: product.supplier?.supplier_id || defaultSupplier._id,
-          supplier_name: product.supplier?.supplier_name || defaultSupplier.supplier_name,
+          supplier_id: supplierId,
+          supplier_name: supplierName,
           items: [{
             product_id: product._id,
             product_name: product.product_name,
             product_code: product.product_code,
-            quantity: orderQty,
+            quantity: quantity,
             purchase_cost: (product.unit_price || 0) * 0.6
           }],
-          notes: `Automatic reorder from dashboard due to low stock.`
+          notes: `Dashboard reorder: ${product.product_name} x ${quantity}`
         };
 
         this.apiService.createPurchase(purchaseData).subscribe({
           next: (res: any) => {
             Swal.fire({
-              title: 'PO Created!',
-              text: `Purchase Order #${res.data._id.slice(-6).toUpperCase()} created. Stock updates on "RECEIVED".`,
+              title: 'Success!',
+              text: `Purchase Order for ${product.product_name} created successfully.`,
               icon: 'success',
-              confirmButtonColor: 'var(--primary)',
-              background: 'var(--surface)',
-              color: 'var(--text)'
+              confirmButtonColor: '#ff3366',
+              background: '#ffffff',
+              color: '#1a1d27'
             });
             this.refreshData();
           },
@@ -816,15 +948,69 @@ export class Dashboard implements OnInit {
             const errorMsg = err.error?.error || err.error?.message || err.message;
             Swal.fire({
               title: 'Error!',
-              text: 'Failed: ' + errorMsg,
+              text: 'Failed to create PO: ' + errorMsg,
               icon: 'error',
-              confirmButtonColor: 'var(--red)',
-              background: 'var(--surface)',
-              color: 'var(--text)'
+              confirmButtonColor: '#ff3366',
+              background: '#ffffff',
+              color: '#1a1d27'
             });
           }
         });
       }
+    });
+  }
+
+  exportToCSV() {
+    const data = this.allSalesData;
+    if (!data || data.length === 0) {
+      Swal.fire({
+        title: 'No Data',
+        text: 'There are no orders to export at this time.',
+        icon: 'info',
+        confirmButtonColor: 'var(--luxe-primary)',
+        background: 'var(--luxe-card-bg, #fff)',
+        color: 'var(--luxe-text)'
+      });
+      return;
+    }
+
+    const headers = ['Order ID', 'Customer', 'Date', 'Status', 'Amount (USD)'];
+    const csvRows = [];
+    csvRows.push(headers.join(','));
+
+    for (const s of data) {
+      const row = [
+        `#${s._id?.substring(18, 24).toUpperCase()}`,
+        `"${s.customer_name || 'Walk-in'}"`,
+        `"${new Date(s.sale_date || s.createdAt).toLocaleDateString('en-US', { year: 'numeric', month: 'short', day: 'numeric' })}"`,
+        s.payment_status,
+        s.total_amount?.toFixed(2)
+      ];
+      csvRows.push(row.join(','));
+    }
+
+    const csvContent = csvRows.join('\n');
+    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    
+    link.setAttribute('href', url);
+    link.setAttribute('download', `GLOW_Orders_${new Date().toISOString().split('T')[0]}.csv`);
+    link.style.visibility = 'hidden';
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+
+    Swal.fire({
+      title: 'Export Successful',
+      text: `Exported ${data.length} orders to CSV.`,
+      icon: 'success',
+      toast: true,
+      position: 'top-end',
+      showConfirmButton: false,
+      timer: 3000,
+      background: 'var(--luxe-card-bg, #fff)',
+      color: 'var(--luxe-text)'
     });
   }
 }
