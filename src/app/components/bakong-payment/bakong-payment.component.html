@@ -1,237 +1,205 @@
-<div class="page-wrapper">
+<div class="pos-wrapper luxe-fade-in">
 
-  <!-- ── Header ─────────────────────────────────────────────── -->
-  <header class="topbar">
-    <div class="topbar-brand">
-      <span class="brand-icon">🏦</span>
-      <span class="brand-name">Bakong Pay</span>
-      <span class="brand-sub">Stock Management</span>
+  <!-- LUXE TOPBAR -->
+  <header class="luxe-pos-header">
+    <div class="pos-logo-area" (click)="startOver()">
+      <div class="pos-logo-icon">✨</div>
+      <div class="pos-brand">2R3NY<span>POS</span></div>
     </div>
-    @if (pageState() === 'shop') {
-    <div class="topbar-right">
-      <label class="currency-toggle">
-        <span [class.active]="currency() === 'usd'" (click)="currency.set('usd')">USD $</span>
-        <span class="sep">|</span>
-        <span [class.active]="currency() === 'khr'" (click)="currency.set('khr')">KHR ៛</span>
-      </label>
-      @if (cartCount() > 0) {
-      <button class="btn-checkout" (click)="generateQR()" [disabled]="loading()">
-        @if (loading()) { <span class="spinner"></span> }
-        🛒 Pay {{ totalDisplay() }}
-      </button>
-      }
+    <div class="search-wrapper">
+      <span class="search-icon">🔍</span>
+      <input type="text" class="pos-search-input" placeholder="Search name or code..." [ngModel]="searchTerm()"
+        (ngModelChange)="searchTerm.set($event)" />
+      <button class="clear-search" *ngIf="searchTerm()" (click)="searchTerm.set('')">✕</button>
     </div>
-    }
+    <div class="pos-header-actions">
+      <div class="currency-switcher">
+        <button [class.active]="currency() === 'usd'" (click)="currency.set('usd')">USD</button>
+        <button [class.active]="currency() === 'khr'" (click)="currency.set('khr')">KHR</button>
+      </div>
+      <div class="pos-user">
+        <span class="user-role">Administrator</span>
+        <div class="user-avatar">AD</div>
+      </div>
+    </div>
   </header>
 
-  <!-- ── Error Banner ───────────────────────────────────────── -->
-  @if (error()) {
-  <div class="error-banner">⚠️ {{ error() }}</div>
-  }
+  <!-- MAIN POS INTERFACE -->
+  <main class="pos-main">
 
-  <!-- ══════════════════════════════════════════
-       PAGE: SHOP
-       ══════════════════════════════════════════ -->
-  @if (pageState() === 'shop') {
-  <div class="shop-layout">
+    @if (pageState() === 'shop') {
+    <div class="pos-shop-grid">
 
-    <!-- Product Grid -->
-    <section class="products-panel">
-      <h2 class="section-title">Products</h2>
-      @if (loading() && products().length === 0) {
-      <div class="skeleton-grid">
-        @for (s of [1,2,3,4,5,6]; track s) {
-        <div class="skeleton-card"></div>
-        }
-      </div>
-      } @else if (products().length === 0 && !loading()) {
-      <div class="empty-state">
-        <div class="empty-icon">📦</div>
-        <p>No products found. Make sure the backend is running.</p>
-        <button class="btn-outline" (click)="loadProducts()">Retry</button>
-      </div>
-      } @else {
-      <div class="product-grid">
-        @for (p of products(); track p._id) {
-        <div class="product-card" [class.out-of-stock]="p.quantity_in_stock === 0">
-          <div class="product-badge">{{ p.product_code }}</div>
-          <div class="product-icon">🛍️</div>
-          <div class="product-info">
-            <h3 class="product-name">{{ p.product_name }}</h3>
-            <div class="product-price">
-              @if (currency() === 'usd') {
-              ${{ p.unit_price.toFixed(2) }}
-              } @else {
-              {{ (p.unit_price * 4100) | number:'1.0-0' }} ៛
-              }
+      <!-- PRODUCT GALLERY -->
+      <div class="pos-gallery">
+        <div class="gallery-header">
+          <div class="header-left">
+            <h2 class="gallery-title">Product Catalog</h2>
+            <div class="gallery-info">{{ filteredProducts().length }} Products Found</div>
+          </div>
+
+        </div>
+
+        @if (loading() && products().length === 0) {
+        <div class="pos-skeleton-grid">
+          @for (s of [1,2,3,4,5,6,7,8]; track s) { <div class="pos-skeleton-card"></div> }
+        </div>
+        } @else {
+        <div class="pos-product-grid luxe-scroll">
+          @for (p of filteredProducts(); track p._id) {
+          <div class="pos-product-card" [class.selected]="getCartItem(p._id)"
+            [class.out-of-stock]="p.quantity_in_stock === 0" (click)="p.quantity_in_stock > 0 && addToCart(p)">
+
+            <div class="product-visual">
+              <img *ngIf="p.photo" [src]="p.photo" alt="Photo" />
+              <div *ngIf="!p.photo" class="product-placeholder">📦</div>
+              <div class="product-selection-overlay" *ngIf="getCartItem(p._id)">
+                <span class="count-pill">{{ getCartItem(p._id)!.quantity }}</span>
+              </div>
+              <div class="stock-badge" [class.low]="p.quantity_in_stock <= 5 && p.quantity_in_stock > 0">
+                {{ p.quantity_in_stock > 0 ? p.quantity_in_stock + ' in Stock' : 'Out of Stock' }}
+              </div>
             </div>
-            <div class="product-stock" [class.low]="p.quantity_in_stock <= 5">
-              {{ p.quantity_in_stock }} in stock
+
+            <div class="product-details">
+              <div class="product-meta">
+                <span class="product-cat">{{ p.category?.category_name || 'Cosmetic' }}</span>
+                <span class="product-code">#{{ p.product_code }}</span>
+              </div>
+              <h3 class="product-name">{{ p.product_name }}</h3>
+              <div class="product-price">
+                @if (currency() === 'usd') { ${{ p.unit_price.toFixed(2) }} }
+                @else { {{ (p.unit_price * 4100) | number:'1.0-0' }} ៛ }
+              </div>
             </div>
           </div>
-          @if (p.quantity_in_stock === 0) {
-          <button class="btn-add" disabled>Out of Stock</button>
-          } @else if (getCartItem(p._id)) {
-          <div class="qty-controls">
-            <button class="qty-btn" (click)="changeQty(p._id, -1)">−</button>
-            <span class="qty-value">{{ getCartItem(p._id)!.quantity }}</span>
-            <button class="qty-btn" (click)="changeQty(p._id, 1)"
-              [disabled]="getCartItem(p._id)!.quantity >= p.quantity_in_stock">+</button>
-          </div>
-          } @else {
-          <button class="btn-add" (click)="addToCart(p)">+ Add</button>
           }
         </div>
         }
       </div>
-      }
-    </section>
 
-    <!-- Cart Panel -->
-    <aside class="cart-panel">
-      <h2 class="section-title">Your Cart</h2>
-      @if (cart().length === 0) {
-      <div class="cart-empty">
-        <div class="empty-icon">🛒</div>
-        <p>Add products to get started</p>
-      </div>
-      } @else {
-      <div class="cart-items">
-        @for (item of cart(); track item.product._id) {
-        <div class="cart-row">
-          <div class="cart-row-info">
-            <span class="cart-name">{{ item.product.product_name }}</span>
-            <span class="cart-qty">× {{ item.quantity }}</span>
-          </div>
-          <div class="cart-row-right">
-            <span class="cart-price">
-              @if (currency() === 'usd') {
-              ${{ (item.product.unit_price * item.quantity).toFixed(2) }}
-              } @else {
-              {{ (item.product.unit_price * item.quantity * 4100) | number:'1.0-0' }} ៛
-              }
-            </span>
-            <button class="cart-remove" (click)="removeFromCart(item.product._id)">✕</button>
-          </div>
+      <!-- SHOPPING BAG / CHECKOUT -->
+      <aside class="pos-checkout-sidebar">
+        <div class="checkout-header">
+          <h2 class="checkout-title">Shopping Bag</h2>
+          <span class="item-count">{{ cartCount() }} items</span>
         </div>
-        }
-      </div>
-      <div class="cart-total">
-        <span>Total</span>
-        <span class="total-amount">{{ totalDisplay() }}</span>
-      </div>
-      <button class="btn-pay" (click)="generateQR()" [disabled]="loading()">
-        @if (loading()) { <span class="spinner"></span> }
-        @else { 🏦 }
-        Generate Bakong QR
-      </button>
-      }
-    </aside>
 
-  </div>
-  }
-
-  <!-- ══════════════════════════════════════════
-       PAGE: QR CODE
-       ══════════════════════════════════════════ -->
-  @if (pageState() === 'qr') {
-  <div class="qr-page">
-    <div class="qr-card">
-
-      <div class="qr-header">
-        <div class="qr-logo">🏦</div>
-        <h2>Scan to Pay</h2>
-        <p class="qr-subtitle">Open the <strong>Bakong</strong> app and scan this code</p>
-      </div>
-
-      <!-- QR Image — base64 PNG via qrcode.toDataURL() -->
-      <div class="qr-image-wrapper" [class.paid]="pollStatus() === 'paid'">
-        @if (qrDataUrl()) {
-        <img [src]="qrDataUrl()" alt="Bakong QR Code" class="qr-image" />
+        @if (cart().length === 0) {
+        <div class="checkout-empty">
+          <div class="empty-bag-icon">🧴</div>
+          <p>Your bag is currently empty</p>
+          <span>Select items to start transaction</span>
+        </div>
         } @else {
-        <div class="qr-loading">
-          <span class="spinner-lg"></span>
-          <p>Generating QR…</p>
+        <div class="checkout-items luxe-scroll">
+          @for (item of cart(); track item.product._id) {
+          <div class="checkout-row">
+            <div class="item-img"><img [src]="item.product.photo || 'assets/placeholder.png'" /></div>
+            <div class="item-info">
+              <span class="item-name">{{ item.product.product_name }}</span>
+              <div class="item-qty-control">
+                <button (click)="$event.stopPropagation(); changeQty(item.product._id, -1)">−</button>
+                <span class="qty">{{ item.quantity }}</span>
+                <button (click)="$event.stopPropagation(); changeQty(item.product._id, 1)"
+                  [disabled]="item.quantity >= item.product.quantity_in_stock">+</button>
+              </div>
+            </div>
+            <div class="item-price">
+              @if (currency() === 'usd') { ${{ (item.product.unit_price * item.quantity).toFixed(2) }} }
+              @else { {{ (item.product.unit_price * item.quantity * 4100) | number:'1.0-0' }} ៛ }
+            </div>
+          </div>
+          }
+        </div>
+
+        <div class="checkout-footer">
+          <div class="summary-line">
+            <span>Subtotal</span>
+            <span>{{ totalDisplay() }}</span>
+          </div>
+          <div class="summary-line total">
+            <span>Total Due</span>
+            <span>{{ totalDisplay() }}</span>
+          </div>
+
+          <button class="pos-btn-pay" (click)="generateQR()" [disabled]="loading()">
+            @if (loading()) { <span class="luxe-spinner"></span> }
+            @else { Confirm and Pay with Bakong }
+          </button>
         </div>
         }
-        @if (pollStatus() === 'paid') {
-        <div class="qr-overlay-paid">✓</div>
-        }
-      </div>
+      </aside>
 
-      <!-- Amount + Merchant -->
-      <div class="qr-amount">{{ totalDisplay() }}</div>
-      <div class="qr-merchant">Ou Seavinh · kakada_ung&#64;bkrt</div>
+    </div>
+    }
 
-      <!-- Countdown + poll status -->
-      <div class="qr-status-row">
-        <div class="countdown" [class.urgent]="secondsLeft() < 120">
-          ⏱ {{ countdown() }}
+    <!-- QR OVERLAY -->
+    @if (pageState() === 'qr') {
+    <div class="luxe-qr-overlay luxe-fade-in">
+      <div class="luxe-qr-card">
+
+        <div class="luxe-qr-header">
+          <div class="bakong-logo">🏦 Bakong Pay</div>
+          <h2>Scan QR to Finalize</h2>
+          <p>Open Bakong app on your phone to scan</p>
         </div>
-        <div class="poll-status" [class]="'poll-' + pollStatus()">
-          @if (pollStatus() === 'polling') { <span class="dot-pulse"></span> }
+
+        <div class="luxe-qr-visual" [class.paid]="pollStatus() === 'paid'">
+          @if (qrDataUrl()) { <img [src]="qrDataUrl()" class="main-qr" /> }
+          @else { <div class="luxe-qr-loader">Preparing secure QR...</div> }
+          <div class="luxe-paid-badge" *ngIf="pollStatus() === 'paid'">✓ Paid</div>
+        </div>
+
+        <div class="luxe-qr-meta">
+          <div class="luxe-amount">{{ totalDisplay() }}</div>
+          <div class="luxe-timer" [class.warning]="secondsLeft() < 60">
+            Expires in: <span>{{ countdown() }}</span>
+          </div>
+        </div>
+
+        <div class="poll-status-indicator">
+          <div class="pulse-dot" *ngIf="pollStatus() === 'polling'"></div>
           {{ pollMessage() }}
         </div>
+
+        <button class="luxe-btn-cancel" (click)="startOver()">Cancel Transaction</button>
       </div>
-
-      <!-- Debug info -->
-      <details class="debug-info">
-        <summary>Debug / Session Info</summary>
-        <div class="debug-body">
-          <div><strong>Session ID:</strong> <code>{{ qrData()?.sessionId }}</code></div>
-          <div><strong>MD5:</strong> <code>{{ qrData()?.md5 }}</code></div>
-          <div><strong>Expires:</strong> <code>{{ qrData()?.expiresAt }}</code></div>
-          <div><strong>Amount:</strong> <code>{{ qrData()?.total_amount }}</code></div>
-        </div>
-      </details>
-
-      <button class="btn-outline-small" (click)="startOver()">← Back to Shop</button>
     </div>
-  </div>
-  }
+    }
 
-  <!-- ══════════════════════════════════════════
-       PAGE: SUCCESS
-       ══════════════════════════════════════════ -->
-  @if (pageState() === 'success') {
-  <div class="result-page">
-    <div class="result-card">
-      <div class="result-icon success-icon">✓</div>
-      <h2>Payment Received! 🎉</h2>
-      <p>Your sale has been recorded and stock has been updated.</p>
-      @if (saleResult()) {
-      <div class="sale-details">
-        <div class="sale-row">
-          <span>Sale ID</span>
-          <code>{{ saleResult()._id }}</code>
+    <!-- SUCCESS MODAL -->
+    @if (pageState() === 'success') {
+    <div class="luxe-result-overlay luxe-fade-in">
+      <div class="luxe-status-card success">
+        <div class="status-icon">✨</div>
+        <h2>Transaction Successful</h2>
+        <p>The order has been recorded into 2R3NY inventory.</p>
+
+        @if (saleResult()) {
+        <div class="receipt-preview">
+          <div class="receipt-row"><span>Order ID</span> <code>{{ saleResult()._id.slice(-8) }}</code></div>
+          <div class="receipt-row"><span>Total PAID</span> <strong>{{ totalDisplay() }}</strong></div>
+          <div class="receipt-row"><span>Payment</span> <span class="method">Bakong KRNR</span></div>
         </div>
-        <div class="sale-row">
-          <span>Total</span>
-          <strong>${{ saleResult().total_amount?.toFixed(2) }}</strong>
-        </div>
-        <div class="sale-row">
-          <span>Status</span>
-          <span class="badge-paid">{{ saleResult().payment_status }}</span>
-        </div>
+        }
+
+        <button class="pos-btn-pay" (click)="startOver()">New Transaction</button>
       </div>
-      }
-      <button class="btn-pay" (click)="startOver()">Make Another Payment</button>
     </div>
-  </div>
-  }
+    }
 
-  <!-- ══════════════════════════════════════════
-       PAGE: EXPIRED
-       ══════════════════════════════════════════ -->
-  @if (pageState() === 'expired') {
-  <div class="result-page">
-    <div class="result-card">
-      <div class="result-icon expired-icon">⏱</div>
-      <h2>QR Code Expired</h2>
-      <p>The 15-minute window has passed. Please generate a new QR code.</p>
-      <button class="btn-pay" (click)="startOver()">Try Again</button>
+    <!-- EXPIRED MODAL -->
+    @if (pageState() === 'expired') {
+    <div class="luxe-result-overlay luxe-fade-in">
+      <div class="luxe-status-card error">
+        <div class="status-icon">⏱</div>
+        <h2>Session Expired</h2>
+        <p>The payment window has closed. Please try again.</p>
+        <button class="pos-btn-pay" (click)="startOver()">Restart Transaction</button>
+      </div>
     </div>
-  </div>
-  }
+    }
 
+  </main>
 </div>

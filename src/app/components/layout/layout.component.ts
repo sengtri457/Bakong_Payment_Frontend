@@ -1,13 +1,13 @@
 import { Component } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { RouterModule } from '@angular/router';
-import { Sidebar } from './sidebar/sidebar';
-import { Topbar } from './topbar/topbar';
+import { SidebarComponent } from './sidebar/sidebar';
+import { TopbarComponent } from './topbar/topbar';
 
 @Component({
   selector: 'app-layout',
   standalone: true,
-  imports: [CommonModule, RouterModule, Sidebar, Topbar],
+  imports: [CommonModule, RouterModule, SidebarComponent, TopbarComponent],
   template: `
     <div class="app-layout">
       <app-sidebar></app-sidebar>
@@ -23,8 +23,8 @@ import { Topbar } from './topbar/topbar';
     .app-layout {
       display: flex;
       height: 100vh;
-      background: var(--bg, #0f1117);
-      color: var(--text, #e4e8f5);
+      background: var(--luxe-bg, #f8f9fc);
+      color: var(--luxe-text, #1a1d27);
     }
     .main-content {
       flex: 1;

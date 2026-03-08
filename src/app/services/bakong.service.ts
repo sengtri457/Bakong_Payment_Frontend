@@ -2,16 +2,32 @@ import { Injectable } from '@angular/core';
 import { HttpClient } from '@angular/common/http';
 import { Observable } from 'rxjs';
 
+/**
+ * REPRESENTATION OF A SINGLE ITEM IN THE BAG
+ */
 export interface CartItem {
-  product_id: string;
+  product: Product;    
   quantity: number;
-  remarks?: string;
+  size?: string;
 }
 
 export interface GenerateQRRequest {
   userId: string;
-  items: CartItem[];
+  items: {
+    product_id: string;
+    quantity: number;
+    price: number;
+  }[];
+  total_amount: number;
   currency: 'usd' | 'khr';
+  shipping_address?: {
+    name: string;
+    address: string;
+    city: string;
+    state: string;
+    zip: string;
+  };
+  shipping_method?: string;
   notes?: string;
 }
 
@@ -38,8 +54,21 @@ export interface Product {
   quantity_in_stock: number;
   description?: string;
   photo?: string;
+  sub_category?: string;
+  category?: {
+    category_id: string;
+    category_name: string;
+  };
   gallery_photos?: string[];
   sizes?: string[];
+  skin_type?: string[];
+  ingredients?: string;
+  how_to_use?: string;
+  benefits?: string[];
+  volume?: string;
+  is_vegan?: boolean;
+  is_cruelty_free?: boolean;
+  is_best_seller?: boolean;
 }
 
 @Injectable({ providedIn: 'root' })
@@ -58,5 +87,9 @@ export class BakongService {
 
   checkPayment(sessionId: string): Observable<CheckPaymentResponse> {
     return this.http.post<CheckPaymentResponse>(`${this.api}/bakong/check`, { sessionId });
+  }
+
+  getBestSellers(limit: number = 8): Observable<{ success: boolean; data: Product[] }> {
+    return this.http.get<{ success: boolean; data: Product[] }>(`${this.api}/products?is_best_seller=true&limit=${limit}`);
   }
 }

@@ -1,602 +1,863 @@
-import { Component, OnInit, signal, computed, inject, PLATFORM_ID, OnDestroy, ViewEncapsulation } from '@angular/core';
-import { isPlatformBrowser, CommonModule } from '@angular/common';
+import { Component, OnInit, OnDestroy, signal, computed, inject, ViewEncapsulation, PLATFORM_ID } from '@angular/core';
+import { CommonModule, isPlatformBrowser } from '@angular/common';
 import { FormsModule } from '@angular/forms';
-import { Router } from '@angular/router';
+import { Router, RouterModule, ActivatedRoute } from '@angular/router';
 import * as QRCode from 'qrcode';
-import { BakongService, Product, GenerateQRResponse } from '../../../services/bakong.service';
+import { BakongService, GenerateQRResponse, Product } from '../../../services/bakong.service';
 import { AuthService } from '../../../services/auth.service';
+import { ApiService } from '../../../services/api.service';
+import { CartService } from '../../../services/cart.service';
+import { NavbarComponent } from '../navbar/navbar';
+import { CartComponent } from '../cart/cart';
+import Swal from 'sweetalert2';
 
-interface CartItem {
-  product: Product;
-  quantity: number;
-  size?: string;
-}
-
-type PageState = 'shop' | 'detail' | 'qr' | 'success' | 'expired';
+type PageState = 'shop' | 'detail' | 'qr' | 'success' | 'expired' | 'cart' | 'checkout';
 
 @Component({
   selector: 'app-store',
   standalone: true,
-  imports: [CommonModule, FormsModule],
+  imports: [CommonModule, FormsModule, RouterModule, NavbarComponent, CartComponent],
   encapsulation: ViewEncapsulation.None,
   template: `
     <div class="store-wrapper">
-      <!-- Minimal Store Navigation -->
-      <nav class="store-nav">
-        <div class="nav-brand">
-          <span class="icon">✨</span>
-          <span class="brand-text">Aura Clothing</span>
-        </div>
-        <div class="nav-actions">
-          <label class="currency-toggle">
-            <span [class.active]="currency() === 'usd'" (click)="currency.set('usd')">USD $</span>
-            <span class="sep">|</span>
-            <span [class.active]="currency() === 'khr'" (click)="currency.set('khr')">KHR ៛</span>
-          </label>
-          <ng-container *ngIf="user()">
-            <button class="cart-btn" (click)="toggleCart()" title="View Cart">
-              Cart <span class="cart-badge" *ngIf="cartCount() > 0">{{ cartCount() }}</span>
-            </button>
-            <button *ngIf="isAdmin()" class="cart-btn" (click)="router.navigate(['/dashboard'])" style="color:var(--aura-primary)" title="Admin Dashboard">
-              Admin Dashboard
-            </button>
-            <button class="cart-btn" (click)="logout()" style="color:var(--aura-cta)" title="Logout">
-              Logout
-            </button>
-          </ng-container>
-          <ng-container *ngIf="!user()">
-            <button class="cart-btn" (click)="login()">
-              Sign In / Register to Buy
-            </button>
-          </ng-container>
+      <app-navbar *ngIf="pageState() !== 'checkout' && pageState() !== 'qr'"></app-navbar>
+
+      <!-- CHECKOUT NAV -->
+      <nav class="chk-nav" *ngIf="pageState() === 'checkout' || pageState() === 'qr'">
+        <div class="chk-nav-container">
+          <div class="nav-brand-luxe" (click)="backToShop()" style="cursor: pointer;">
+            <span class="brand-text">Glow Studio</span>
+          </div>
+          <div class="checkout-steps-glow">
+            <span class="step" [class.active]="pageState() === 'checkout'">CHECKOUT</span>
+            <span class="separator">›</span>
+            <span class="step" [class.active]="pageState() === 'qr'">PAYMENT</span>
+          </div>
+          <div class="user-actions">
+             <button class="join-btn-luxe outline" style="padding: 0.5rem 1.5rem;" (click)="backToShop()">Cancel</button>
+          </div>
         </div>
       </nav>
 
-      <main class="store-content" *ngIf="pageState() === 'shop'">
-        <!-- Hero Section -->
-        <section class="hero-section">
-          <div class="hero-content">
-            <h1>Elevate Your Style.</h1>
-            <p>Discover premium luxury clothing crafted for the modern individual.</p>
+      <!-- PAGE: HOME / SHOP -->
+      <main class="landing-luxe fade-in mt-3" *ngIf="pageState() === 'shop'">
+        <header class="hero-split-luxe fade-in">
+          <div class="hero-content-left">
+             <span class="hero-label-luxe">NEW SUMMER RADIANCE 2024</span>
+             <h1 class="hero-main-title">Elevate Your <span>Natural Glow</span></h1>
+             <p class="hero-main-desc">Experience the pinnacle of ethical luxury with our meticulously crafted clean beauty essentials designed for every skin tone.</p>
+             <div class="hero-actions-row">
+                <button class="btn-ritual-primary" (click)="activeFilter.set('all')">Shop the Collection</button>
+                <button class="btn-ritual-outline">Explore Story</button>
+             </div>
           </div>
-        </section>
+          <div class="hero-img-right">
+             <img src="https://images.unsplash.com/photo-1594035910387-fea47794261f?q=80&w=800" alt="Signature Serum" />
+          </div>
+        </header>
 
-        <!-- Product Grid -->
-        <section class="products-section">
-          <div class="section-header">
-            <h2>The Collection</h2>
+        <!-- CURATED EDIT -->
+        <section class="section-luxe" *ngIf="loading() || bestSellers().length > 0">
+          <div class="section-header-luxe">
+            <div>
+              <h2>The Curated Edit</h2>
+              <p>Essential rituals for a timeless routine.</p>
+            </div>
+            <a class="view-all-link" routerLink="/collection" (click)="activeFilter.set('all')">View All →</a>
           </div>
 
-          <div *ngIf="loading() && products().length === 0" class="product-grid">
-            <div *ngFor="let s of [1,2,3,4,5,6]" class="skeleton-card"></div>
-          </div>
-
-          <div *ngIf="!loading() && products().length === 0" class="empty-state">
-            <div class="empty-icon">😔</div>
-            <h3>Collection is empty</h3>
-            <p>Please check back later for new arrivals</p>
-          </div>
-
-          <div class="product-grid" *ngIf="products().length > 0">
-            <div class="card product-card" *ngFor="let p of products()">
-              <div class="product-image-wrapper" (click)="viewProduct(p)" style="cursor: pointer;">
-                <div class="product-image-placeholder">
-                  <img *ngIf="p.photo" [src]="p.photo" [alt]="p.product_name" class="real-product-image" />
-                  <div *ngIf="!p.photo" class="placeholder-content">Aura</div>
-                  <span class="img-badge" *ngIf="p.quantity_in_stock < 5 && p.quantity_in_stock > 0">Limited</span>
-                  <span class="img-badge out" *ngIf="p.quantity_in_stock === 0">Sold Out</span>
-                </div>
-                <!-- We will rely on the detail page to Buy, or we can keep hovering too. 
-                     If the user clicks on the image, we navigate. If they click Add to Cart, we stop propagation. -->
-                <div class="hover-overlay" (click)="$event.stopPropagation()">
-                  <ng-container *ngIf="p.quantity_in_stock > 0">
-                    <ng-container *ngIf="user(); else loginToBuy">
-                      <button class="btn-primary" (click)="viewProduct(p)">{{ (p.sizes?.length || 0) > 0 ? 'Select Size' : 'View Item' }}</button>
-                    </ng-container>
-                    <ng-template #loginToBuy>
-                      <button class="btn-primary" (click)="login()">Login to Buy</button>
-                    </ng-template>
-                  </ng-container>
-                  <button *ngIf="p.quantity_in_stock === 0" class="btn-primary disabled" disabled>Out of Stock</button>
-                </div>
+          <!-- SKELETON WIREFRAME -->
+          <div class="luxe-grid" *ngIf="loading()">
+            <div class="luxe-card" *ngFor="let s of [1,2,3,4]">
+              <div class="skeleton-box skeleton-img"></div>
+              <div class="luxe-card-info">
+                 <div class="skeleton-box skeleton-text title"></div>
+                 <div class="skeleton-box skeleton-text price"></div>
+                 <div class="skeleton-box skeleton-text desc"></div>
               </div>
+            </div>
+          </div>
 
-              <div class="product-info" (click)="viewProduct(p)" style="cursor: pointer;">
+          <!-- REAL DATA -->
+          <div class="luxe-grid" *ngIf="!loading()">
+            <div class="luxe-card" *ngFor="let p of bestSellers().slice(0, 4); let i = index" (click)="viewProduct(p)">
+              <div class="luxe-img-box">
+                <div class="luxe-badge" *ngIf="i % 2 === 0">Essential</div>
+                <div class="luxe-wishlist">❤</div>
+                <img *ngIf="p.photo" [src]="p.photo" [alt]="p.product_name" class="fade-in" />
+                <span *ngIf="!p.photo" style="font-size:3rem; opacity:0.1; font-weight:900">{{ p.product_name.charAt(0) }}</span>
+              </div>
+              <div class="luxe-card-info">
                 <h3>{{ p.product_name }}</h3>
-                <p class="desc">{{ p.description || 'Exclusive luxury item' }}</p>
-                <div class="price">
-                  <span *ngIf="currency() === 'usd'">\${{ p.unit_price.toFixed(2) }}</span>
-                  <span *ngIf="currency() === 'khr'">{{ (p.unit_price * 4100) | number:'1.0-0' }} ៛</span>
-                </div>
+                <div class="price">\${{ p.unit_price.toFixed(2) }}</div>
+                <span class="category">{{ p.description || 'Clean Beauty' }}</span>
               </div>
             </div>
           </div>
         </section>
+
+        <!-- LUXE STANDARD SECTION -->
+        <section class="luxe-standard-split section-luxe">
+           <div class="standard-images-grid">
+              <div class="standard-img-box tall">
+                 <img src="https://images.unsplash.com/photo-1594035910387-fea47794261f?q=80&w=800" alt="Lifestyle" />
+              </div>
+              <div class="standard-img-box short">
+                 <img src="https://images.unsplash.com/photo-1594035910387-fea47794261f?q=80&w=800" alt="Product Reveal" />
+              </div>
+           </div>
+           <div class="standard-text-col">
+              <h2>The Luxe Standard</h2>
+              <p>We believe beauty should be as kind as it is powerful. Our commitment to purity ensures your skin receives only the finest botanical ingredients, ethically sourced and scientifically proven to perform.</p>
+              
+              <ul class="feature-list-luxe">
+                 <li class="feature-item-luxe">
+                    <div class="feature-icon-circle">✨</div>
+                    <div>
+                       <h4>100% Clean Ingredients</h4>
+                       <p>Free from parabens, sulfates, and synthetic fragrances. Always.</p>
+                    </div>
+                 </li>
+                 <li class="feature-item-luxe">
+                    <div class="feature-icon-circle">🌿</div>
+                    <div>
+                       <h4>Sustainable Packaging</h4>
+                       <p>Recyclable glass and FSC-certified paper for a healthier planet.</p>
+                    </div>
+                 </li>
+                 <li class="feature-item-luxe">
+                    <div class="feature-icon-circle">🐰</div>
+                    <div>
+                       <h4>Cruelty-Free Certified</h4>
+                       <p>Leaping Bunny certified, never tested on animals at any stage.</p>
+                    </div>
+                 </li>
+              </ul>
+           </div>
+        </section>
+
+
+        <!-- NEWSLETTER (LUXE) -->
+        <section class="newsletter-glow section-luxe">
+           <div class="newsletter-card-glow">
+              <h2>Join the Circle</h2>
+              <p>Sign up for early access to our Summer rituals and a 15% glow-up bonus.</p>
+              <div class="newsletter-form-glow">
+                 <input type="email" placeholder="Email Address" class="luxe-input" aria-label="Subscribe to our newsletter" />
+                 <button class="btn-luxe-primary">Subscribe</button>
+              </div>
+           </div>
+        </section>
+
+        <!-- FOOTER (RESTORED) -->
+        <footer class="footer-glow">
+           <div class="footer-grid-glow">
+              <div class="footer-brand-col">
+                 <div class="brand-text">Glow Studio</div>
+                 <p>Defining the future of clean, ethical luxury skincare.</p>
+              </div>
+              <div class="footer-link-col">
+                 <h4>Shop</h4>
+                 <a (click)="activeFilter.set('all')">Face</a>
+                 <a (click)="activeFilter.set('all')">Body</a>
+                 <a (click)="activeFilter.set('all')">Sets</a>
+              </div>
+              <div class="footer-link-col">
+                 <h4>About</h4>
+                 <a>Philosophy</a>
+                 <a>Sustainability</a>
+                 <a>Stockists</a>
+              </div>
+              <div class="footer-link-col">
+                 <h4>Support</h4>
+                 <a>Shipping</a>
+                 <a>Returns</a>
+                 <a>Contact</a>
+              </div>
+           </div>
+           <div class="footer-bottom-glow">
+              <p>© 2026 Glow Studio. All Rights Reserved.</p>
+              <div class="footer-socials">
+                 <span>IG</span> <span>FB</span> <span>TT</span>
+              </div>
+           </div>
+        </footer>
       </main>
 
-      <!-- Product Detail View -->
-      <main class="store-content detail-view" *ngIf="pageState() === 'detail' && selectedProduct()">
-        <div class="breadcrumb">
-          <a (click)="backToShop()">HOME</a> / <a (click)="backToShop()">COLLECTION</a> / <span>{{ selectedProduct()?.product_name | uppercase }}</span>
+      <!-- PAGE: PRODUCT DETAIL -->
+      <main class="detail-view-glow fade-in" *ngIf="pageState() === 'detail' && selectedProduct()">
+        <div class="breadcrumb-luxe">
+          <a (click)="backToShop()">HOME</a> / <a (click)="backToShop()">COLLECTION</a> / <span class="active">{{ selectedProduct()?.product_name | uppercase }}</span>
         </div>
         
-        <div class="detail-grid">
-          <div class="detail-gallery">
-            <div class="thumbnails-col" *ngIf="(selectedProduct()?.gallery_photos?.length || 0) > 0">
-              <div class="thumb-wrapper" [class.active]="selectedImage() === selectedProduct()?.photo" (click)="selectedImage.set(selectedProduct()?.photo || null)">
-                 <img *ngIf="selectedProduct()?.photo" [src]="selectedProduct()?.photo" />
-                 <span *ngIf="!selectedProduct()?.photo">MAIN</span>
+        <div class="glow-detail-container">
+          <div class="glow-detail-gallery">
+            <div class="glow-main-image-wrapper">
+              <div class="best-seller-badge" *ngIf="selectedProduct()?.is_best_seller">BEST SELLER</div>
+              <img *ngIf="selectedImage()" [src]="selectedImage()" class="glow-main-img" />
+              <div class="glow-internal-thumbs" *ngIf="(selectedProduct()?.gallery_photos?.length || 0) > 0">
+                <div class="glow-thumb" [class.active]="selectedImage() === selectedProduct()?.photo" (click)="selectedImage.set(selectedProduct()?.photo || null)">
+                  <img *ngIf="selectedProduct()?.photo" [src]="selectedProduct()?.photo" />
+                </div>
+                <div class="glow-thumb" *ngFor="let gImg of selectedProduct()?.gallery_photos" [class.active]="selectedImage() === gImg" (click)="selectedImage.set(gImg)">
+                  <img [src]="gImg" />
+                </div>
               </div>
-              <div class="thumb-wrapper" *ngFor="let gImg of selectedProduct()?.gallery_photos" [class.active]="selectedImage() === gImg" (click)="selectedImage.set(gImg)">
-                 <img [src]="gImg" />
-              </div>
-            </div>
-            <div class="detail-main-image">
-              <img *ngIf="selectedImage()" [src]="selectedImage()" [alt]="selectedProduct()?.product_name" />
-              <div *ngIf="!selectedImage()" class="placeholder-large">Aura Clothing</div>
             </div>
           </div>
           
-          <div class="detail-info">
-            <div class="detail-code">Item: {{ selectedProduct()?.product_code }}</div>
-            <h1 class="detail-title">{{ selectedProduct()?.product_name }}</h1>
-            <div class="detail-price">
-              <span *ngIf="currency() === 'usd'">\${{ selectedProduct()?.unit_price?.toFixed(2) }}</span>
-              <span *ngIf="currency() === 'khr'">{{ ((selectedProduct()?.unit_price || 0) * 4100) | number:'1.0-0' }} ៛</span>
+          <div class="glow-detail-info">
+            <div class="glow-detail-meta">
+              <span class="glow-item-code">{{ selectedProduct()?.product_code }}</span>
+              <span class="glow-volume" *ngIf="selectedProduct()?.volume">{{ selectedProduct()?.volume }}</span>
+            </div>
+            <h1 class="glow-detail-title">{{ selectedProduct()?.product_name }}</h1>
+            
+            <div class="glow-detail-price">
+              <span class="amount">\${{ selectedProduct()?.unit_price?.toFixed(2) }}</span>
+              <div class="ethical-badges">
+                <span class="badge vegan" *ngIf="selectedProduct()?.is_vegan">VEGAN</span>
+                <span class="badge cruelty-free" *ngIf="selectedProduct()?.is_cruelty_free">CRUELTY FREE</span>
+              </div>
             </div>
             
-            <p class="detail-desc">{{ selectedProduct()?.description || 'Exclusive premium clothing piece brought to you by Aura.' }}</p>
+            <p class="glow-detail-desc">{{ selectedProduct()?.description }}</p>
 
-            <div class="size-selector" *ngIf="(selectedProduct()?.sizes?.length || 0) > 0">
-              <span class="size-label">Size: <span class="selected-size-text">{{ selectedSize() || 'Select a size' }}</span></span>
-              <div class="size-options">
-                <button *ngFor="let s of selectedProduct()?.sizes" 
-                        class="size-btn" 
-                        [class.active]="selectedSize() === s" 
-                        (click)="selectedSize.set(s)">{{ s }}</button>
+            <div class="glow-specs-grid">
+              <div class="spec-item" *ngIf="selectedProduct()?.skin_type?.length">
+                <span class="spec-label">SKIN TYPE</span>
+                <span class="spec-value">{{ selectedProduct()?.skin_type?.join(', ') }}</span>
+              </div>
+              <div class="spec-item" *ngIf="selectedProduct()?.benefits?.length">
+                <span class="spec-label">BENEFITS</span>
+                <span class="spec-value">{{ selectedProduct()?.benefits?.join(', ') }}</span>
               </div>
             </div>
 
-            <div class="detail-status">
-               <div class="status-indicator" [class.low]="selectedProduct()!.quantity_in_stock < 5" [class.out]="selectedProduct()!.quantity_in_stock === 0"></div>
-               <span *ngIf="selectedProduct()!.quantity_in_stock > 5">In Stock ({{ selectedProduct()?.quantity_in_stock }} available)</span>
-               <span *ngIf="selectedProduct()!.quantity_in_stock > 0 && selectedProduct()!.quantity_in_stock <= 5">Limited Stock ({{ selectedProduct()?.quantity_in_stock }} left!)</span>
-               <span *ngIf="selectedProduct()!.quantity_in_stock === 0">Out of Stock</span>
-            </div>
-
-            <div class="detail-actions">
-              <ng-container *ngIf="selectedProduct()!.quantity_in_stock > 0">
-                <ng-container *ngIf="user(); else loginDetail">
-                  
-                  <button class="btn-primary massive-btn" 
-                          *ngIf="!getCartItem(selectedProduct()!._id, selectedSize())" 
-                          [disabled]="(selectedProduct()?.sizes?.length || 0) > 0 && !selectedSize()"
-                          (click)="addToCart(selectedProduct()!)">
-                    {{ (selectedProduct()?.sizes?.length || 0) > 0 && !selectedSize() ? 'Select a Size' : 'Add to Cart' }}
-                  </button>
-                  
-                  <div class="qty-control large" *ngIf="getCartItem(selectedProduct()!._id, selectedSize())">
-                    <button (click)="changeQty(selectedProduct()!._id, getCartItem(selectedProduct()!._id, selectedSize())?.size, -1)">-</button>
-                    <span>{{ getCartItem(selectedProduct()!._id, selectedSize())!.quantity }} in Cart</span>
-                    <button (click)="changeQty(selectedProduct()!._id, getCartItem(selectedProduct()!._id, selectedSize())?.size, 1)" [disabled]="getCartItem(selectedProduct()!._id, selectedSize())!.quantity >= selectedProduct()!.quantity_in_stock">+</button>
+            <div class="glow-detail-actions">
+              <ng-container *ngIf="selectedProduct()!.quantity_in_stock > 0; else soldOutBtn">
+                <ng-container *ngIf="user(); else loginToBuy">
+                  <button class="glow-add-btn" *ngIf="!getCartItem(selectedProduct()!._id)" (click)="addToCart(selectedProduct()!)">ADD TO BAG</button>
+                  <div class="glow-qty-pill" *ngIf="getCartItem(selectedProduct()!._id)">
+                    <button class="qty-btn" (click)="changeQty(selectedProduct()!._id, undefined, -1)">-</button>
+                    <span class="qty-val">{{ getCartItem(selectedProduct()!._id)!.quantity }} in Bag</span>
+                    <button class="qty-btn" (click)="changeQty(selectedProduct()!._id, undefined, 1)">+</button>
                   </div>
-                
                 </ng-container>
-                <ng-template #loginDetail>
-                  <button class="btn-primary massive-btn" (click)="login()">Login to Purchase</button>
+                <ng-template #loginToBuy>
+                  <button class="glow-add-btn" (click)="login()">LOGIN TO PURCHASE</button>
                 </ng-template>
               </ng-container>
-              
-              <button class="btn-primary massive-btn disabled" *ngIf="selectedProduct()!.quantity_in_stock === 0" disabled>
-                Sold Out
-              </button>
+              <ng-template #soldOutBtn>
+                <button class="glow-add-btn" disabled>SOLD OUT</button>
+              </ng-template>
+            </div>
+
+            <div class="glow-info-accordion">
+              <div class="accordion-section" *ngIf="selectedProduct()?.how_to_use">
+                <div class="section-trigger">The Ritual</div>
+                <div class="section-content">{{ selectedProduct()?.how_to_use }}</div>
+              </div>
+              <div class="accordion-section" *ngIf="selectedProduct()?.ingredients">
+                <div class="section-trigger">Ingredient Glossery</div>
+                <div class="section-content">{{ selectedProduct()?.ingredients }}</div>
+              </div>
             </div>
           </div>
         </div>
       </main>
 
-      <!-- Cart Drawer -->
-      <div class="cart-drawer" [class.open]="isCartOpen()">
-        <div class="cart-header">
-          <h2>Your Cart</h2>
-          <button class="close-btn" (click)="toggleCart()">✕</button>
-        </div>
-        
-        <div class="cart-body">
-          <div *ngIf="cart().length === 0" class="empty-cart">
-            <p>Your cart is empty</p>
-          </div>
+
+      <!-- PAGE: SHOPPING CART (REDESIGNED) -->
+      <main class="sc-page fade-in" *ngIf="pageState() === 'cart'">
+        <app-cart (proceedCheckout)="proceedToCheckout()" (backShop)="backToShop()"></app-cart>
+      </main>
+
+      <!-- PAGE: CHECKOUT -->
+      <main class="chk-page fade-in" *ngIf="pageState() === 'checkout'">
+        <div class="chk-container">
           
-          <div class="cart-items" *ngIf="cart().length > 0">
-            <div class="cart-item" *ngFor="let item of cart()">
-              <div class="item-icon">
-                <img *ngIf="item.product.photo" [src]="item.product.photo" class="mini-cart-img"/>
-                <span *ngIf="!item.product.photo">Aura</span>
-              </div>
-              <div class="item-details">
-                <h4>{{ item.product.product_name }}</h4>
-                <div class="item-size" *ngIf="item.size" style="font-size:0.85rem; color:#64748b; margin-top:-4px; margin-bottom:4px;">Size: {{item.size}}</div>
-                <div class="item-price">
-                  <span *ngIf="currency() === 'usd'">\${{ item.product.unit_price.toFixed(2) }}</span>
-                  <span *ngIf="currency() === 'khr'">{{ (item.product.unit_price * 4100) | number:'1.0-0' }} ៛</span>
+          <div class="chk-left">
+            <h1 class="chk-title">Checkout</h1>
+            <div class="chk-breadcrumbs">
+              <span (click)="pageState.set('cart')">Bag</span> ›
+              <span class="active">Information</span> ›
+              <span>Payment</span>
+            </div>
+
+            <div class="chk-card">
+              <h2 class="chk-card-title">
+                <svg viewBox="0 0 24 24" width="20" height="20" stroke="currentColor" stroke-width="2" fill="none" class="chk-icon"><path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z"></path><circle cx="12" cy="10" r="3"></circle></svg>
+                Shipping Address
+              </h2>
+              <div class="chk-form">
+                <div class="chk-field full">
+                  <label>Full Name</label>
+                  <input type="text" [(ngModel)]="shippingName" placeholder="Alexandra Rose" />
+                </div>
+                <div class="chk-field full">
+                  <label>Email</label>
+                  <input type="text" [(ngModel)]="shippingEmail" placeholder="[EMAIL_ADDRESS]" />
+                </div>
+                <div class="chk-field full">
+                  <label>Phone</label>
+                  <input type="text" [(ngModel)]="shippingPhone" placeholder="123456789" />
+                </div>
+                <div class="chk-field full">
+                  <label>Street Address</label>
+                  <input type="text" [(ngModel)]="shippingAddress" placeholder="123 Beauty Lane" />
+                </div>
+                <div class="chk-row">
+                  <div class="chk-field">
+                    <label>City</label>
+                    <input type="text" [(ngModel)]="shippingCity" placeholder="Los Angeles" />
+                  </div>
+                  <div class="chk-field">
+                    <label>State</label>
+                    <input type="text" [(ngModel)]="shippingState" placeholder="CA" />
+                  </div>
+                  <div class="chk-field">
+                    <label>ZIP</label>
+                    <input type="text" [(ngModel)]="shippingZip" placeholder="90210" />
+                  </div>
                 </div>
               </div>
-              <div class="item-actions">
-                <div class="qty-mini">
-                  <button (click)="changeQty(item.product._id, item.size, -1)">-</button>
-                  <span>{{ item.quantity }}</span>
-                  <button (click)="changeQty(item.product._id, item.size, 1)" [disabled]="item.quantity >= item.product.quantity_in_stock">+</button>
+            </div>
+
+            <div class="chk-card">
+              <h2 class="chk-card-title">
+                <svg viewBox="0 0 24 24" width="20" height="20" stroke="currentColor" stroke-width="2" fill="none" class="chk-icon"><rect x="1" y="3" width="15" height="13"></rect><polygon points="16 8 20 8 23 11 23 16 16 16 16 8"></polygon><circle cx="5.5" cy="18.5" r="2.5"></circle><circle cx="18.5" cy="18.5" r="2.5"></circle></svg>
+                Shipping Method
+              </h2>
+              <div class="chk-shipping-options">
+                <div class="chk-shipping-radio" [class.active]="shippingMethod() === 'standard'" (click)="shippingMethod.set('standard')">
+                  <div class="chk-radio-circle"></div>
+                  <div class="chk-shipping-info">
+                    <strong>Standard Shipping</strong>
+                    <p>3-5 business days</p>
+                  </div>
+                  <strong class="chk-shipping-price">Free</strong>
                 </div>
+                <div class="chk-shipping-radio" [class.active]="shippingMethod() === 'express'" (click)="shippingMethod.set('express')">
+                  <div class="chk-radio-circle"></div>
+                  <div class="chk-shipping-info">
+                    <strong>Express Delivery</strong>
+                    <p>1-2 business days</p>
+                  </div>
+                  <strong class="chk-shipping-price-text">$12.00</strong>
+                </div>
+              </div>
+            </div>
+
+            <div class="chk-card">
+              <h2 class="chk-card-title">
+                <svg viewBox="0 0 24 24" width="20" height="20" stroke="currentColor" stroke-width="2" fill="none" class="chk-icon"><rect x="2" y="5" width="20" height="14" rx="2"></rect><line x1="2" y1="10" x2="22" y2="10"></line></svg>
+                Payment Method
+              </h2>
+              <div class="chk-shipping-options">
+                <div class="chk-shipping-radio" [class.active]="paymentMethod() === 'khqr'" (click)="paymentMethod.set('khqr')">
+                  <div class="chk-radio-circle"></div>
+                  <div class="chk-shipping-info">
+                    <strong>Bakong KHQR</strong>
+                    <p>Scan and pay instantly with any bank app</p>
+                  </div>
+                  <div class="chk-shipping-price">
+                    <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="2" width="20" height="20" rx="2" ry="2"></rect><rect x="5" y="5" width="6" height="6"></rect><rect x="13" y="5" width="6" height="6"></rect><rect x="5" y="13" width="6" height="6"></rect><rect x="13" y="13" width="6" height="6"></rect></svg>
+                  </div>
+                </div>
+                <div class="chk-shipping-radio" [class.active]="paymentMethod() === 'cash'" (click)="paymentMethod.set('cash')">
+                  <div class="chk-radio-circle"></div>
+                  <div class="chk-shipping-info">
+                    <strong>Cash on Delivery</strong>
+                    <p>Pay when you receive your routine</p>
+                  </div>
+                  <div class="chk-shipping-price">
+                    <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 1v22M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"></path></svg>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <div class="chk-qr-notice" *ngIf="paymentMethod() === 'khqr'">
+              <div class="chk-qr-notice-inner">
+                <svg viewBox="0 0 24 24" width="20" height="20" stroke="currentColor" stroke-width="2" fill="none"><rect x="3" y="11" width="18" height="11" rx="2" ry="2"></rect><path d="M7 11V7a5 5 0 0 1 10 0v4"></path></svg>
+                <p>Your payment will be processed securely via Bakong KHQR. A scan-to-pay QR will be generated once you click Complete Purchase.</p>
+              </div>
+            </div>
+
+          </div>
+
+          <!-- RIGHT -->
+          <div class="chk-right">
+            <div class="chk-summary-card">
+              <h2 class="chk-summary-title">Order Summary</h2>
+              
+              <div class="chk-items">
+                <div class="chk-item" *ngFor="let item of cart()">
+                  <div class="chk-item-img">
+                    <img *ngIf="item.product.photo" [src]="item.product.photo" />
+                  </div>
+                  <div class="chk-item-info">
+                    <h4>{{ item.product.product_name }}</h4>
+                    <p>Size: {{ item.product.volume || '30ml' }}</p>
+                    <span class="chk-item-price">\${{ (item.product.unit_price * item.quantity).toFixed(2) }}</span>
+                  </div>
+                </div>
+              </div>
+
+              <div class="chk-summary-lines">
+                <div class="chk-line">
+                  <span>Subtotal</span>
+                  <strong>\${{ total().toFixed(2) }}</strong>
+                </div>
+                <div class="chk-line">
+                  <span>Shipping</span>
+                  <strong [class.free]="shippingMethod() === 'standard'">{{ shippingMethod() === 'standard' ? 'Free' : '$12.00' }}</strong>
+                </div>
+                <div class="chk-line">
+                  <span>Taxes</span>
+                  <strong>\$0.00</strong>
+                </div>
+              </div>
+
+              <div class="chk-total-line">
+                <span>Total</span>
+                <strong>\${{ (total() + (shippingMethod() === 'express' ? 12 : 0)).toFixed(2) }}</strong>
+              </div>
+
+              <button class="chk-submit-btn" (click)="finalizePurchase()">Complete Purchase</button>
+
+              <div class="chk-payment-methods">
+                <svg viewBox="0 0 24 24" width="24" height="24" stroke="currentColor" fill="none"><rect x="2" y="5" width="20" height="14" rx="2"></rect><line x1="2" y1="10" x2="22" y2="10"></line></svg>
+                <svg viewBox="0 0 24 24" width="24" height="24" stroke="currentColor" fill="none"><rect x="4" y="4" width="16" height="16" rx="2" ry="2"></rect><rect x="9" y="9" width="6" height="6"></rect><line x1="9" y1="1" x2="9" y2="4"></line><line x1="15" y1="1" x2="15" y2="4"></line><line x1="9" y1="20" x2="9" y2="23"></line><line x1="15" y1="20" x2="15" y2="23"></line><line x1="20" y1="9" x2="23" y2="9"></line><line x1="20" y1="14" x2="23" y2="14"></line><line x1="1" y1="9" x2="4" y2="9"></line><line x1="1" y1="14" x2="4" y2="14"></line></svg>
+                <svg viewBox="0 0 24 24" width="24" height="24" stroke="currentColor" fill="none"><rect x="3" y="3" width="18" height="18" rx="2" ry="2"></rect><rect x="7" y="7" width="3" height="3"></rect><rect x="14" y="7" width="3" height="3"></rect><rect x="7" y="14" width="3" height="3"></rect><rect x="14" y="14" width="3" height="3"></rect></svg>
+              </div>
+            </div>
+
+            <div class="chk-trust-badges">
+              <div class="chk-badge">
+                <svg viewBox="0 0 24 24" fill="none" class="trust-icon" stroke="currentColor" stroke-width="2"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"></path></svg>
+                <span>SECURE</span>
+              </div>
+              <div class="chk-badge">
+                <svg viewBox="0 0 24 24" fill="none" class="trust-icon" stroke="currentColor" stroke-width="2"><path d="M12 2L2 22h20L12 2z"></path></svg>
+                <span>VEGAN</span>
+              </div>
+              <div class="chk-badge">
+                <svg viewBox="0 0 24 24" fill="none" class="trust-icon" stroke="currentColor" stroke-width="2"><path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z"></path></svg>
+                <span>PURE</span>
               </div>
             </div>
           </div>
         </div>
+      </main>
 
-        <div class="cart-footer" *ngIf="cart().length > 0">
-          <div class="cart-total">
-            <span>Subtotal</span>
-            <span class="amount">{{ totalDisplay() }}</span>
+      <!-- PAGE: SUCCESS -->
+      <main class="success-wrap-luxe fade-in" *ngIf="pageState() === 'success'">
+        <div class="success-content-luxe">
+          <!-- SUCCESS ICON -->
+          <div class="success-icon-container">
+            <div class="success-icon-glow-ring"></div>
+            <div class="success-check-circle">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="4">
+                <path d="M20 6L9 17l-5-5" />
+              </svg>
+            </div>
           </div>
-          <button class="btn-primary checkout-btn" (click)="generateQR()" [disabled]="loading()">
-            <span *ngIf="loading()" class="spinner-mini"></span>
-            Checkout with Bakong
-          </button>
+
+          <h1 class="success-title-luxe">Thank You for Your Purchase!</h1>
+          <p class="success-subtitle-luxe">We've received your order and our team is already getting it ready for shipment.</p>
+
+          <!-- ORDER INFO CARD -->
+          <div class="order-summary-card-luxe" *ngIf="lastOrder()">
+            <div class="summary-row-luxe">
+              <span class="label">Order Number</span>
+              <span class="value accent">#ORD-{{ lastOrder()._id?.slice(-8).toUpperCase() || 'GLOW-99284-XPL' }}</span>
+            </div>
+            <div class="summary-row-luxe">
+              <span class="label">Estimated Delivery</span>
+              <span class="value">{{ estimatedDelivery() }}</span>
+            </div>
+            <div class="summary-row-luxe">
+              <span class="label">Confirmation Email</span>
+              <span class="value">{{ user()?.username || 'hello@user.com' }}</span>
+            </div>
+          </div>
+
+          <!-- FEATURED BOX IMAGE -->
+          <div class="featured-package-glow">
+            <img src="https://images.unsplash.com/photo-1549465220-1a8b9238cd48?q=80&w=1200" alt="Your Package" />
+            <div class="img-overlay-luxe"></div>
+          </div>
+
+          <!-- ACTIONS -->
+          <div class="success-actions-luxe">
+            <button class="btn-success-primary" (click)="backToShop()">
+               <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="9" cy="21" r="1"/><circle cx="20" cy="21" r="1"/><path d="M1 1h4l2.68 13.39a2 2 0 0 0 2 1.61h9.72a2 2 0 0 0 2-1.61L23 6H6"/></svg>
+               Back to Shop
+            </button>
+            <button class="btn-success-outline" (click)="printInvoice()">
+               <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M6 9V2h12v7"/><path d="M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2"/><rect x="6" y="14" width="12" height="8"/></svg>
+               View Invoice
+            </button>
+          </div>
+
+          <p class="help-text-luxe">Need help? <a href="#" (click)="$event.preventDefault()">Contact Support</a></p>
+
+          <!-- TRUST FOOTER -->
+          <div class="success-trust-footer">
+            <div class="trust-icons-luxe">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"></path></svg>
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="1" y="3" width="15" height="13"></rect><polygon points="16 8 20 8 23 11 23 16 16 16 16 8"></polygon><circle cx="5.5" cy="18.5" r="2.5"></circle><circle cx="18.5" cy="18.5" r="2.5"></circle></svg>
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"></polygon></svg>
+            </div>
+            <span class="secured-text-luxe">SECURED BY GLOWPAY</span>
+          </div>
+        </div>
+      </main>
+
+      <!-- PAGE: EXPIRED -->
+      <main class="result-page-glow fade-in" *ngIf="pageState() === 'expired'">
+        <div class="result-card-glow">
+          <div class="result-icon-glow expired">✕</div>
+          <h1>Session Expired</h1>
+          <p>The secure payment window has closed. No charges were made. Please try checking out again.</p>
+          <button class="join-btn" style="padding:1rem 2.5rem; border-radius:12px;" (click)="backToShop()">Back to Shop</button>
+        </div>
+      </main>
+
+      <!-- PAYMENT OVERLAY -->
+      <div class="qr-overlay-glow" *ngIf="pageState() === 'qr'">
+        <div class="qr-modal-glow fade-in">
+          <h2 style="font-weight:950; font-size:1.5rem;">Scan to Pay</h2>
+          <p style="color:var(--glow-text-muted); font-size:0.9rem;">Secure transaction via Bakong KHQR</p>
+          
+          <div class="qr-placeholder-glow">
+            <img *ngIf="qrCodeData()" [src]="qrCodeData()" />
+            <div *ngIf="!qrCodeData()" class="pulsing-dot" style="width:40px; height:40px;"></div>
+          </div>
+
+          <div class="error-msg-glow" *ngIf="error()">{{ error() }}</div>
+
+          <div class="payment-status-tag status-pending">
+            <span class="pulsing-dot"></span>
+            WAITING FOR PAYMENT...
+          </div>
+          <button class="glow-back-link" (click)="pageState.set('checkout')">← Modify Details</button>
         </div>
       </div>
-      <div class="drawer-backdrop" *ngIf="isCartOpen()" (click)="toggleCart()"></div>
-
-      <!-- Payment Overlays (QR / Success / Expired) -->
-      <div class="payment-overlay" *ngIf="['qr', 'success', 'expired'].includes(pageState())">
-        
-        <div class="modal qr-card" *ngIf="pageState() === 'qr'">
-          <div class="qr-header">
-            <h2>Complete Payment</h2>
-            <p>Scan securely with your Bakong app</p>
-          </div>
-          <div class="qr-image-wrapper" [class.paid]="pollStatus() === 'paid'">
-            <img *ngIf="qrDataUrl()" [src]="qrDataUrl()" alt="Bakong QR" />
-            <div class="qr-loading" *ngIf="!qrDataUrl()">Generating...</div>
-            <div class="paid-check" *ngIf="pollStatus() === 'paid'">✓</div>
-          </div>
-          <div class="qr-amount">{{ totalDisplay() }}</div>
-          
-          <div class="qr-status-row">
-            <div class="countdown" [class.urgent]="secondsLeft() < 120">⏱ {{ countdown() }}</div>
-            <div class="poll-status" [class]="'poll-' + pollStatus()">{{ pollMessage() }}</div>
-          </div>
-          
-          <a class="cancel-link" (click)="startOver()">Cancel Order</a>
-        </div>
-
-        <div class="modal result-card" *ngIf="pageState() === 'success'">
-          <div class="icon-success">✓</div>
-          <h2>Payment Successful</h2>
-          <p>Your premium order has been confirmed.</p>
-          <button class="btn-primary" (click)="startOver()">Continue Shopping</button>
-        </div>
-
-        <div class="modal result-card" *ngIf="pageState() === 'expired'">
-          <div class="icon-expired">✕</div>
-          <h2>Payment Expired</h2>
-          <p>The time limit to pay has passed.</p>
-          <button class="btn-secondary" (click)="startOver()">Return to Store</button>
-        </div>
-
-      </div>
-
     </div>
   `,
-  styles: [`
-    .real-product-image {
-      width: 100%;
-      height: 100%;
-      object-fit: cover;
-      position: absolute;
-      top: 0;
-      left: 0;
-      z-index: 1;
-    }
-    .placeholder-content {
-      z-index: 0;
-    }
-    .img-badge { z-index: 2 !important; }
-    .mini-cart-img {
-      width: 100%;
-      height: 100%;
-      object-fit: cover;
-      border-radius: 8px;
-    }
-
-    /* Product Detail Overrides */
-    .detail-view { padding: 2rem 4% !important; max-width: 1440px; margin: 0 auto; }
-    
-    .breadcrumb { font-size: 0.85rem; color: #64748b; margin-bottom: 2rem; letter-spacing: 0.5px; text-transform: uppercase; font-weight: 500; }
-    .breadcrumb a { color: var(--aura-primary, #2563eb); cursor: pointer; transition: color 0.2s; }
-    .breadcrumb a:hover { color: var(--aura-text); text-decoration: underline; }
-    
-    .detail-grid {
-      display: grid;
-      grid-template-columns: 1.2fr 1fr;
-      gap: 4rem;
-      align-items: start;
-    }
-    @media (max-width: 1024px) {
-      .detail-grid { grid-template-columns: 1fr; gap: 3rem; }
-    }
-    
-    .detail-gallery {
-      display: flex;
-      gap: 1rem;
-      align-items: flex-start;
-      position: sticky;
-      top: 100px;
-    }
-    .thumbnails-col {
-      display: flex;
-      flex-direction: column;
-      gap: 0.75rem;
-      width: 60px;
-    }
-    .thumb-wrapper {
-      width: 60px;
-      height: 75px;
-      border-radius: 6px;
-      overflow: hidden;
-      cursor: pointer;
-      border: 2px solid transparent;
-      transition: all 0.2s;
-      background: #f8fafc;
-      display: flex; align-items: center; justify-content: center;
-      font-size: 0.6rem; color: #94a3b8;
-    }
-    .thumb-wrapper img { width: 100%; height: 100%; object-fit: cover; }
-    .thumb-wrapper:hover { border-color: #cbd5e1; }
-    .thumb-wrapper.active { border-color: var(--aura-text); }
-    
-    .detail-main-image {
-      flex: 1;
-      aspect-ratio: 3/4;
-      background: #f1f5f9;
-      border-radius: 12px;
-      overflow: hidden;
-    }
-    .detail-main-image img {
-      width: 100%; height: 100%; object-fit: cover;
-    }
-    .placeholder-large {
-      display: flex; align-items: center; justify-content: center;
-      width: 100%; height: 100%; color: #94a3b8; font-size: 2rem; font-weight: 300; background: #f1f5f9;
-    }
-    
-    .detail-info {
-      padding-top: 1rem;
-    }
-    .detail-code { color: var(--aura-primary, #2563EB); font-family: monospace; font-size: 0.9rem; letter-spacing: 1px; margin-bottom: 0.5rem; }
-    .detail-title { font-size: 2.5rem; font-weight: 700; margin: 0 0 1rem 0; line-height: 1.2; color: var(--aura-text); font-family: var(--aura-heading-font); }
-    .detail-price { font-size: 1.75rem; color: var(--aura-text); font-weight: 400; margin-bottom: 1.5rem; display: flex; align-items: center; gap: 1rem; }
-    .detail-desc { font-size: 1.05rem; color: #475569; line-height: 1.6; margin-bottom: 2.5rem; }
-    .detail-status { display: flex; align-items: center; gap: 0.5rem; margin-bottom: 1.5rem; color: var(--aura-text); font-size: 0.95rem; }
-    .status-indicator { width: 8px; height: 8px; border-radius: 50%; background: #10b981; }
-    .status-indicator.low { background: #f59e0b; }
-    .status-indicator.out { background: #ef4444; }
-    
-    .detail-actions { display: flex; flex-direction: column; gap: 1rem; }
-    
-    .size-selector { margin-bottom: 2rem; }
-    .size-label { display: block; font-size: 0.95rem; font-weight: 500; color: #475569; margin-bottom: 1rem; }
-    .selected-size-text { color: var(--aura-text); font-weight: 700; margin-left: 0.5rem; }
-    .size-options { display: flex; flex-wrap: wrap; gap: 0.5rem; }
-    .size-btn { 
-      min-width: 60px; height: 45px; background: white; border: 1px solid #cbd5e1; 
-      border-radius: 4px; font-weight: 600; cursor: pointer; transition: all 0.2s;
-      display: flex; align-items: center; justify-content: center;
-      color: var(--aura-text);
-    }
-    .size-btn:hover { border-color: var(--aura-text); }
-    .size-btn.active { border-color: var(--aura-text); background: var(--aura-text); color: white; }
-
-    .massive-btn { padding: 1.25rem; font-size: 1rem; font-weight: 600; text-transform: uppercase; letter-spacing: 1px; border-radius: 6px; border: none; background: #1e293b; color: white; cursor: pointer; transition: 0.2s;}
-    .massive-btn:hover { background: #334155; }
-    .massive-btn.disabled { background: #cbd5e1; cursor: not-allowed; }
-    
-    .qty-control.large { display: flex; justify-content: space-between; align-items: center; background: white; border: 1px solid #e2e8f0; padding: 0.5rem; border-radius: 12px; }
-    .qty-control.large span { font-size: 1.1rem; font-weight: 600; color: var(--aura-text); }
-    .qty-control.large button { width: 50px; height: 50px; background: #f1f5f9; color: var(--aura-text); border: none; border-radius: 8px; font-size: 1.5rem; cursor: pointer; transition: 0.2s; }
-    .qty-control.large button:hover:not([disabled]) { background: var(--aura-text); color: #fff; }
-    .qty-control.large button[disabled] { opacity: 0.3; cursor: not-allowed; }
-  `],
   styleUrl: './store.css'
 })
 export class StoreComponent implements OnInit, OnDestroy {
   private bakongService = inject(BakongService);
   private authService = inject(AuthService);
+  private apiService = inject(ApiService);
+  private cartService = inject(CartService);
+  private route = inject(ActivatedRoute);
   router = inject(Router);
   private platformId = inject(PLATFORM_ID);
   
   user = this.authService.currentUser;
+  cart = this.cartService.cart;
+  cartCount = this.cartService.cartCount;
+  total = this.cartService.total;
 
   // States
   pageState = signal<PageState>('shop');
   selectedProduct = signal<Product | null>(null);
   selectedImage = signal<string | null>(null);
   selectedSize = signal<string | null>(null);
-  isCartOpen = signal(false);
   products = signal<Product[]>([]);
-  cart = signal<CartItem[]>([]);
   loading = signal(false);
   error = signal('');
+  categories = signal<any[]>([]);
   currency = signal<'usd' | 'khr'>('usd');
   
   // Payment States
   qrData = signal<GenerateQRResponse | null>(null);
-  qrDataUrl = signal('');
+  qrCodeData = signal<string>('');
   pollStatus = signal<'idle' | 'polling' | 'paid' | 'expired'>('idle');
-  pollMessage = signal('Waiting for payment…');
-  saleResult = signal<any>(null);
+  bestSellers = signal<Product[]>([]);
+  activeFilter = signal<string>('all');
   secondsLeft = signal(900);
   
+  // Checkout Form States
+  paymentMethod = signal<'khqr' | 'cash'>('khqr');
+  lastOrder = signal<any>(null);
+  shippingName = signal('');
+  shippingEmail = signal('');
+  shippingPhone = signal('');
+  shippingAddress = signal('');
+  shippingCity = signal('');
+  shippingState = signal('');
+  shippingZip = signal('');
+  shippingMethod = signal<'standard' | 'express'>('standard');
+  promoCode = '';
+
   private pollInterval: any;
   private countdownInterval: any;
-  readonly TEST_USER_ID = '000000000000000000000001';
 
   // Computeds
-  total = computed(() => this.cart().reduce((sum, i) => sum + i.product.unit_price * i.quantity, 0));
-  cartCount = computed(() => this.cart().reduce((sum, i) => sum + i.quantity, 0));
   totalDisplay = computed(() => {
     const t = this.total();
     return this.currency() === 'usd' ? `$${t.toFixed(2)}` : `${Math.round(t * 4100).toLocaleString()} ៛`;
   });
-  countdown = computed(() => {
-    const m = Math.floor(this.secondsLeft() / 60).toString().padStart(2, '0');
-    const s = (this.secondsLeft() % 60).toString().padStart(2, '0');
-    return `${m}:${s}`;
+  
+  filteredProducts = computed(() => {
+    const p = this.products();
+    if (this.activeFilter() === 'best') return this.bestSellers();
+    if (this.activeFilter() === 'serums') return p.filter(prod => prod.product_name.toLowerCase().includes('serum'));
+    if (this.activeFilter() === 'cleansers') return p.filter(prod => prod.product_name.toLowerCase().includes('cleanser'));
+    return p;
   });
 
-  ngOnInit() { this.loadProducts(); }
+  estimatedDelivery = computed(() => {
+    const now = new Date();
+    const start = new Date(now);
+    const end = new Date(now);
+
+    // Dynamic: 1 to 2 days from today
+    start.setDate(now.getDate() + 1);
+    end.setDate(now.getDate() + 2);
+
+    const options: Intl.DateTimeFormatOptions = { month: 'short', day: 'numeric' };
+    return `${start.toLocaleDateString('en-US', options)} - ${end.toLocaleDateString('en-US', options)}`;
+  });
+
+  ngOnInit() { 
+    this.loadProducts(); 
+    this.loadBestSellers();
+    this.apiService.getCategories().subscribe(res => {
+      if (res.success) this.categories.set(res.data);
+    });
+
+    // Check for fragment (cart)
+    this.route.fragment.subscribe(frag => {
+      if (frag === 'cart') {
+        this.pageState.set('cart');
+        window.scrollTo({ top: 0, behavior: 'smooth' });
+      }
+    });
+
+    // Check for product ID in URL
+    this.route.queryParams.subscribe(params => {
+      const productId = params['id'];
+      if (productId) {
+        // Find product in existing list or wait for load
+        if (this.products().length > 0) {
+          const found = this.products().find(p => p._id === productId);
+          if (found) this.viewProduct(found);
+        } else {
+          // If products not loaded yet, wait for them
+          const sub = this.bakongService.getProducts().subscribe(res => {
+            const found = res.data.find((p: any) => p._id === productId);
+            if (found) this.viewProduct(found);
+            sub.unsubscribe();
+          });
+        }
+      }
+    });
+  }
   ngOnDestroy() { this.stopPolling(); }
 
-  login() {
-    this.router.navigate(['/login']);
+  loadProducts() {
+    this.loading.set(true);
+    this.bakongService.getProducts().subscribe({
+      next: (res) => { this.products.set(res.data); this.loading.set(false); },
+      error: () => this.loading.set(false)
+    });
   }
 
-  logout() {
-    this.authService.logout();
+  loadBestSellers() {
+    this.bakongService.getBestSellers().subscribe(res => {
+      this.bestSellers.set(res.data);
+    });
   }
 
-  isAdmin() {
-    return this.authService.isAdmin();
-  }
+  login() { this.router.navigate(['/login']); }
+  logout() { this.authService.logout(); }
 
-  toggleCart() { this.isCartOpen.update(v => !v); }
+  toggleCart() { 
+    this.pageState.set(this.pageState() === 'cart' ? 'shop' : 'cart');
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+  }
 
   viewProduct(product: Product) {
-    this.selectedProduct.set(product);
-    this.selectedImage.set(product.photo || null);
-    this.selectedSize.set(null);
-    this.pageState.set('detail');
-    window.scrollTo({ top: 0, behavior: 'smooth' });
+    this.router.navigate(['/product', product._id]);
   }
 
   backToShop() {
     this.selectedProduct.set(null);
     this.pageState.set('shop');
-  }
-
-  loadProducts() {
-    this.loading.set(true);
-    this.bakongService.getProducts().subscribe({
-      next: (res: any) => { this.products.set(res.data ?? []); this.loading.set(false); },
-      error: () => this.loading.set(false)
-    });
+    window.scrollTo({ top: 0, behavior: 'smooth' });
   }
 
   addToCart(product: Product) {
-    const existing = this.cart().find(i => i.product._id === product._id && i.size === this.selectedSize());
-    if (existing) {
-      if (existing.quantity >= product.quantity_in_stock) return;
-      this.cart.update(c => c.map(i => (i.product._id === product._id && i.size === this.selectedSize()) ? { ...i, quantity: i.quantity + 1 } : i));
-    } else {
-      this.cart.update(c => [...c, { product, quantity: 1, size: this.selectedSize() || undefined }]);
+    if (!this.user()) {
+      Swal.fire({
+        title: 'Authentication Required',
+        text: 'Please sign in or create an account to start your glow routine.',
+        icon: 'info',
+        showCancelButton: true,
+        confirmButtonText: 'Sign In Now',
+        cancelButtonText: 'Maybe Later',
+        confirmButtonColor: 'var(--primary)',
+        background: 'var(--surface)',
+        color: 'var(--text)'
+      }).then((result) => {
+        if (result.isConfirmed) {
+          this.login();
+        }
+      });
+      return;
     }
+
+    this.cartService.addToCart(product);
+    Swal.fire({
+      title: 'Added to Bag',
+      text: `1x ${product.product_name} added to your glow routine.`,
+      icon: 'success',
+      toast: true,
+      position: 'bottom-end',
+      showConfirmButton: false,
+      timer: 2000,
+      background: 'var(--surface)',
+      color: 'var(--text)'
+    });
   }
 
-  changeQty(productId: string, size: string | undefined, delta: number) {
-    this.cart.update(c => c.map(i => {
-      if (i.product._id !== productId || i.size !== size) return i;
-      const newQty = i.quantity + delta;
-      return newQty <= 0 ? null : { ...i, quantity: Math.min(newQty, i.product.quantity_in_stock) };
-    }).filter(Boolean) as CartItem[]);
+  getCartItem(id: string) {
+    return this.cart().find(i => i.product._id === id);
   }
 
-  getCartItem(productId: string, size?: string | null): CartItem | undefined {
-    return this.cart().find(i => i.product._id === productId && i.size === (size || undefined));
+  changeQty(id: string, size: string | undefined, delta: number) {
+    this.cartService.changeQty(id, size, delta);
   }
 
-  generateQR() {
-    if (this.cart().length === 0) return;
+  removeFromCart(id: string, size: string | undefined) {
+    this.cartService.removeFromCart(id, size);
+  }
+
+  proceedToCheckout() {
+    if (!this.user()) return this.login();
+    this.pageState.set('checkout');
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+  }
+
+  finalizePurchase() {
     this.loading.set(true);
     this.error.set('');
-
-    const currentUserId = this.user()?.id || this.TEST_USER_ID;
-
-    const payload = {
-      userId: currentUserId,
-      currency: this.currency(),
-      items: this.cart().map(i => ({ product_id: i.product._id, quantity: i.quantity })),
-      notes: 'Store checkout',
+    const userId = (this.user() as any)?._id || '000000000000000000000001';
+    
+    const payload: any = {
+      userId: userId,
+      items: this.cart().map(i => ({ 
+        product_id: i.product._id, 
+        quantity: i.quantity, 
+        price: i.product.unit_price,
+        product: i.product // for invoice display
+      })),
+      total_amount: this.total() + (this.shippingMethod() === 'express' ? 12 : 0),
+      currency: this.currency() as 'usd' | 'khr',
+      shipping_address: {
+        name: this.shippingName(),
+        email: this.shippingEmail(),
+        phone: this.shippingPhone(),
+        address: this.shippingAddress(),
+        city: this.shippingCity(),
+        state: this.shippingState(),
+        zip: this.shippingZip()
+      },
+      shipping_method: this.shippingMethod(),
+      payment_method: this.paymentMethod(),
+      notes: 'Glow Studio Web Order'
     };
 
-    this.bakongService.generateQR(payload).subscribe({
-      next: (res: GenerateQRResponse) => {
-        this.qrData.set(res);
-        this.secondsLeft.set(900);
-        this.isCartOpen.set(false);
-
-        if (isPlatformBrowser(this.platformId)) {
-          QRCode.toDataURL(res.qrString, { width: 300, margin: 2 })
-            .then(url => this.qrDataUrl.set(url))
-            .catch(err => console.error(err));
+    if (this.paymentMethod() === 'cash') {
+      this.apiService.createSale(payload).subscribe({
+        next: (res) => {
+          this.lastOrder.set(res.data);
+          this.pageState.set('success');
+          this.cartService.clearCart();
+          this.loading.set(false);
+        },
+        error: (err) => {
+          this.loading.set(false);
+          this.error.set(err?.error?.message || 'Failed to process order. Please try again.');
         }
+      });
+      return;
+    }
 
+    this.bakongService.generateQR(payload).subscribe({
+      next: (res) => {
+        this.qrData.set(res);
+        this.lastOrder.set({ ...payload, _id: res.sessionId });
         this.pageState.set('qr');
         this.loading.set(false);
+
+        // Generate QR as base64 PNG — works in browser and SSR
+        if (isPlatformBrowser(this.platformId)) {
+          QRCode.toDataURL(res.qrString, {
+            width: 280,
+            margin: 2,
+            color: { dark: '#000000', light: '#ffffff' },
+            errorCorrectionLevel: 'M',
+          })
+            .then((dataUrl: string) => {
+              this.qrCodeData.set(dataUrl);
+            })
+            .catch((err: any) => {
+              console.error('[QR] toDataURL error:', err);
+              this.error.set('Failed to render QR image.');
+            });
+        }
+        
         this.startPolling(res.sessionId);
-        this.startCountdown();
       },
-      error: () => this.loading.set(false)
+      error: (err) => {
+        this.loading.set(false);
+        this.error.set(err?.error?.message || 'Failed to generate payment QR. Please try again.');
+      }
     });
   }
 
   private startPolling(sessionId: string) {
     this.pollStatus.set('polling');
-    this.pollMessage.set('Waiting for payment…');
-
+    this.secondsLeft.set(900);
+    
     this.pollInterval = setInterval(() => {
-      this.bakongService.checkPayment(sessionId).subscribe({
-        next: (res: any) => {
-          if (res.isPaid) {
-            this.saleResult.set(res.sale);
-            this.pollStatus.set('paid');
-            this.pollMessage.set('Payment confirmed! 🎉');
-            this.stopPolling();
-            setTimeout(() => this.pageState.set('success'), 1000);
-          } else if (res.message?.includes('expired')) {
-            this.pollStatus.set('expired');
-            this.pollMessage.set('QR expired.');
-            this.stopPolling();
-            this.pageState.set('expired');
-          }
-        },
-        error: () => {}
-      });
-    }, 3000);
-  }
-
-  private stopPolling() {
-    clearInterval(this.pollInterval);
-    clearInterval(this.countdownInterval);
-  }
-
-  private startCountdown() {
-    this.countdownInterval = setInterval(() => {
-      this.secondsLeft.update(s => {
-        if (s <= 1) {
+      this.bakongService.checkPayment(sessionId).subscribe(res => {
+        if (res.isPaid) {
           this.stopPolling();
-          if (this.pageState() === 'qr') this.pageState.set('expired');
-          return 0;
+          this.pageState.set('success');
+          this.cartService.clearCart();
+        } else if (res.message?.includes('expired')) {
+          this.stopPolling();
+          this.pageState.set('expired');
         }
-        return s - 1;
       });
+    }, 5000);
+
+    this.countdownInterval = setInterval(() => {
+      this.secondsLeft.update(s => s - 1);
+      if (this.secondsLeft() <= 0) {
+        this.stopPolling();
+        this.pageState.set('expired');
+      }
     }, 1000);
   }
 
-  startOver() {
-    this.stopPolling();
-    this.cart.set([]);
-    this.qrData.set(null);
-    this.qrDataUrl.set('');
-    this.pollStatus.set('idle');
-    this.pageState.set('shop');
-    this.loadProducts();
+  private stopPolling() {
+    if (this.pollInterval) clearInterval(this.pollInterval);
+    if (this.countdownInterval) clearInterval(this.countdownInterval);
+  }
+
+  get today() { return new Date(); }
+
+  printInvoice() {
+    window.print();
   }
 }

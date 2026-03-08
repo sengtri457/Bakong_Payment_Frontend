@@ -15,6 +15,9 @@ export class ApiService {
   createProduct(data: any): Observable<any> { return this.http.post(`${this.baseUrl}/products`, data); }
   updateProduct(id: string, data: any): Observable<any> { return this.http.put(`${this.baseUrl}/products/${id}`, data); }
   deleteProduct(id: string): Observable<any> { return this.http.delete(`${this.baseUrl}/products/${id}`); }
+  updateStock(id: string, data: {quantity: number, type: 'IN'|'OUT'|'ADJUSTMENT', notes?: string}): Observable<any> { 
+    return this.http.put(`${this.baseUrl}/products/${id}/stock`, data); 
+  }
 
   // Categories
   getCategories(): Observable<any> { return this.http.get(`${this.baseUrl}/categories`); }
@@ -29,4 +32,17 @@ export class ApiService {
 
   // Sales
   getSales(): Observable<any> { return this.http.get(`${this.baseUrl}/sales`); }
+  createSale(data: any): Observable<any> { return this.http.post(`${this.baseUrl}/sales`, data); }
+  getSalesStats(): Observable<any> { return this.http.get(`${this.baseUrl}/sales/stats/overview`); }
+  getBestSellers(limit: number = 5): Observable<any> { return this.http.get(`${this.baseUrl}/sales/best-sellers?limit=${limit}`); }
+  getSalesByRange(start: string, end: string): Observable<any> { 
+    return this.http.get(`${this.baseUrl}/sales/date-range?start=${start}&end=${end}`); 
+  }
+
+  // Purchases
+  getPurchases(): Observable<any> { return this.http.get(`${this.baseUrl}/purchases`); }
+  createPurchase(data: any): Observable<any> { return this.http.post(`${this.baseUrl}/purchases`, data); }
+  updatePurchaseStatus(id: string, status: 'PENDING'|'RECEIVED'|'CANCELLED'): Observable<any> {
+    return this.http.put(`${this.baseUrl}/purchases/${id}/status`, { status });
+  }
 }

@@ -229,7 +229,7 @@ export class LoginComponent {
         next: () => {
           this.loading.set(false);
           // Auto route depending on Role
-          if (this.authService.isAdmin()) {
+          if (this.authService.isManager()) {
             this.router.navigate(['/dashboard']);
           } else {
             this.router.navigate(['/store']);

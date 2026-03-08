@@ -9,7 +9,7 @@ import { isPlatformBrowser } from '@angular/common';
 export interface User {
   id: string;
   username: string;
-  role: 'admin' | 'client';
+  role: 'admin' | 'staff' | 'client';
 }
 
 @Injectable({
@@ -71,5 +71,15 @@ export class AuthService {
 
   isAdmin(): boolean {
     return this.currentUser()?.role === 'admin';
+  }
+
+  isStaff(): boolean {
+    return this.currentUser()?.role === 'staff';
+  }
+
+  // Can manage inventory/orders (Both Admin and Staff)
+  isManager(): boolean {
+    const role = this.currentUser()?.role;
+    return role === 'admin' || role === 'staff';
   }
 }
